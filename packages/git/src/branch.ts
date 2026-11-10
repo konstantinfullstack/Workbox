@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import type { ChangedFile } from '#shared';
 import { GitError, runGit, type GitCredentials } from './run.js';
 import { hasUncommittedChanges } from './workspace.js';
@@ -365,4 +366,21 @@ export async function commitTaskChanges(options: {
   });
   const { stdout } = await runGit(['-C', options.path, 'rev-parse', 'HEAD']);
   return stdout.trim();
+}
+
+/**
+ * Saves the task branch's commits since `baseSha` as a patch file (`git format-patch` format, so
+ * it can be applied with `git am`). Not truncated, unlike the stored diff; git output above 16 MB
+ * fails, and the caller treats that as "no patch saved".
+ */
+export async function writeBranchPatch(path: string, baseSha: string, file: string): Promise<void> {
+  const { stdout } = await runGit([
+    '-C',
+    path,
+    'format-patch',
+    '--stdout',
+    '--no-signature',
+    `${baseSha}..HEAD`,
+  ]);
+  await writeFile(file, stdout, { mode: 0o600 });
 }

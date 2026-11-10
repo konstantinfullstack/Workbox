@@ -15,6 +15,11 @@ export interface AgentTask {
   timeoutMs: number;
   /** Shell commands the agent may run (e.g. the project's check commands). Empty = no shell. */
   allowedCommands: string[];
+  /**
+   * If set, the adapter appends its raw native output here (one record per line), so the run's
+   * full transcript can be kept as a file. Never contains Workbox secrets: agents don't get any.
+   */
+  transcriptPath?: string;
 }
 
 /** Normalised event stream. Adapters map their native output onto these. */

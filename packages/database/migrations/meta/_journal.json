@@ -64,6 +64,13 @@
       "when": 1794347118391,
       "tag": "0008_git_reference_branch_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794350438735,
+      "tag": "0009_run_artifacts",
+      "breakpoints": true
     }
   ]
 }

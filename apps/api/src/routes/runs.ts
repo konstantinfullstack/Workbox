@@ -1,8 +1,12 @@
+import { createReadStream } from 'node:fs';
+import { DomainError } from '#core';
 import type { Services } from '#services';
 import {
   continueStatusSchema,
   continueTaskRefSchema,
   errorResponseSchema,
+  runArtifactSchema,
+  ERROR_CODES,
   runDiffSchema,
   runEventSchema,
   runEventsQuerySchema,
@@ -155,6 +159,57 @@ export const runRoutes: FastifyPluginAsyncZod<{ services: Services }> = async (
       },
     },
     async (request) => services.runs.diff(request.params.runId),
+  );
+
+  app.get(
+    '/runs/:runId/artifacts',
+    {
+      schema: {
+        tags: ['runs'],
+        summary: "The run's saved files (transcript, full check output, patch) until they expire",
+        params: runParams,
+        response: { 200: z.object({ items: z.array(runArtifactSchema) }), ...errors },
+      },
+    },
+    async (request) => ({
+      items: services.artifacts ? await services.artifacts.list(request.params.runId) : [],
+    }),
+  );
+
+  app.get(
+    '/runs/:runId/artifacts/:artifactId',
+    {
+      schema: {
+        tags: ['runs'],
+        summary: 'One saved file, as plain text (add ?download=1 to save it)',
+        params: z.object({ runId: z.uuid(), artifactId: z.uuid() }),
+        querystring: z.object({ download: z.enum(['0', '1']).optional() }),
+        // A file stream (text/plain); streams are sent as-is, never serialized.
+        response: { 200: z.unknown().describe('The file (text/plain)'), ...errors },
+      },
+    },
+    async (request, reply) => {
+      if (!services.artifacts) {
+        throw new DomainError(ERROR_CODES.notFound, 'no artifacts folder is configured');
+      }
+      const { artifact, path } = await services.artifacts.open(
+        request.params.runId,
+        request.params.artifactId,
+      );
+      const filename = artifact.name
+        .split('/')
+        .at(-1)!
+        .replace(/[^\w.-]/g, '_');
+      return reply
+        .header('content-type', 'text/plain; charset=utf-8')
+        .header('x-content-type-options', 'nosniff')
+        .header('content-security-policy', "default-src 'none'")
+        .header(
+          'content-disposition',
+          `${request.query.download === '1' ? 'attachment' : 'inline'}; filename="${filename}"`,
+        )
+        .send(createReadStream(path));
+    },
   );
 
   app.post(

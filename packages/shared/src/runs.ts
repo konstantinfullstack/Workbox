@@ -99,3 +99,20 @@ export const runDiffSchema = z.object({
   truncated: z.boolean(),
 });
 export type RunDiff = z.infer<typeof runDiffSchema>;
+
+/** Files saved for each run (M5): kept for a limited time, then deleted. */
+export const RUN_ARTIFACT_KINDS = ['transcript', 'check_output', 'patch'] as const;
+export type RunArtifactKind = (typeof RUN_ARTIFACT_KINDS)[number];
+
+export const runArtifactSchema = z.object({
+  id: z.uuid(),
+  runId: z.uuid(),
+  kind: z.enum(RUN_ARTIFACT_KINDS),
+  /** File name, e.g. `agent-transcript.jsonl`, `checks/1-2-test.log`, `branch.patch`. */
+  name: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  createdAt: z.iso.datetime(),
+  /** When the file is deleted (WORKBOX_ARTIFACT_RETENTION_DAYS after the run). */
+  expiresAt: z.iso.datetime(),
+});
+export type RunArtifact = z.infer<typeof runArtifactSchema>;

@@ -15,3 +15,5 @@ coverage/
 # ~/.workbox/workspaces, outside this repo; these entries guard against in-repo locations.
 .workbox/
 workspaces/
+# Saved run files (agent transcripts, check output, patches); see WORKBOX_ARTIFACTS_DIR.
+artifacts/

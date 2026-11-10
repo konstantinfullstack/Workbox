@@ -79,6 +79,47 @@ function setup(
 }
 
 describe('runs panel', () => {
+  it("lists the run's saved files with view and download links and when they expire", async () => {
+    const task = makeTask();
+    const expiresAt = new Date('2026-11-18T12:00:00Z').toISOString();
+    setup(task, {
+      [`GET /api/v1/tasks/${task.id}/runs`]: () => ({
+        json: { items: [makeRun({ taskId: task.id })] },
+      }),
+      [`GET /api/v1/runs/${RUN_ID}/artifacts`]: () => ({
+        json: {
+          items: [
+            {
+              id: '88888888-8888-4888-8888-888888888888',
+              runId: RUN_ID,
+              kind: 'patch',
+              name: 'branch.patch',
+              sizeBytes: 2048,
+              createdAt: new Date().toISOString(),
+              expiresAt,
+            },
+          ],
+        },
+      }),
+    });
+    renderRoute(<TaskPage />, '/tasks/:taskId', `/tasks/${task.id}`);
+    const files = within(await screen.findByRole('list', { name: 'Saved files' }));
+    expect(files.getByRole('link', { name: 'branch.patch' })).toHaveAttribute(
+      'href',
+      `/api/v1/runs/${RUN_ID}/artifacts/88888888-8888-4888-8888-888888888888`,
+    );
+    expect(files.getByRole('link', { name: 'Download branch.patch' })).toHaveAttribute(
+      'href',
+      `/api/v1/runs/${RUN_ID}/artifacts/88888888-8888-4888-8888-888888888888?download=1`,
+    );
+    expect(files.getByText('(2.0 KB)')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Kept until ${new Date(expiresAt).toLocaleDateString()}, then deleted automatically.`,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('explains why a task cannot run', async () => {
     const task = makeTask();
     setup(task, {
