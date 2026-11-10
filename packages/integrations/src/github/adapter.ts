@@ -1,8 +1,14 @@
 import type { CredentialAuthType, CredentialCheck, RemoteRepository } from '#shared';
 import type { Secret } from '#vault';
-import type { CodeHostAccount, CodeHostAdapter } from '../code-host.js';
+import type {
+  CodeHostAccount,
+  CodeHostAdapter,
+  RepositoryRef,
+  ReviewRequest,
+  ReviewRequestInput,
+} from '../code-host.js';
 import { CodeHostError } from '../code-host.js';
-import { getJson, type HttpOptions } from '../http.js';
+import { requestJson, type HttpOptions } from '../http.js';
 
 interface GitHubUser {
   login: string;
@@ -94,9 +100,114 @@ export class GitHubAdapter implements CodeHostAdapter {
     return toRepository(data);
   }
 
+  async readFile(
+    account: CodeHostAccount,
+    token: Secret,
+    repo: RepositoryRef,
+    path: string,
+    ref: string,
+  ): Promise<string | null> {
+    try {
+      const { data } = await this.call<{ content?: string; encoding?: string; type?: string }>(
+        'GET',
+        account,
+        token,
+        `/repos/${repo.fullPath}/contents/${encodePath(path)}?ref=${encodeURIComponent(ref)}`,
+      );
+      if (data.type !== 'file' || typeof data.content !== 'string') return null;
+      return Buffer.from(data.content, data.encoding === 'base64' ? 'base64' : 'utf8').toString(
+        'utf8',
+      );
+    } catch (error) {
+      if (error instanceof CodeHostError && error.kind === 'not_found') return null;
+      throw error;
+    }
+  }
+
+  async findOpenReviewRequest(
+    account: CodeHostAccount,
+    token: Secret,
+    repo: RepositoryRef,
+    branch: string,
+  ): Promise<ReviewRequest | null> {
+    const owner = repo.fullPath.split('/')[0]!;
+    const { data } = await this.call<GitHubPull[]>(
+      'GET',
+      account,
+      token,
+      `/repos/${repo.fullPath}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}`,
+    );
+    return data[0] ? toReviewRequest(data[0]) : null;
+  }
+
+  async createReviewRequest(
+    account: CodeHostAccount,
+    token: Secret,
+    repo: RepositoryRef,
+    input: ReviewRequestInput,
+  ): Promise<ReviewRequest> {
+    const { data } = await this.call<GitHubPull>(
+      'POST',
+      account,
+      token,
+      `/repos/${repo.fullPath}/pulls`,
+      {
+        title: input.title,
+        head: input.head,
+        base: input.base,
+        body: input.body,
+        draft: input.draft,
+      },
+    );
+    return toReviewRequest(data);
+  }
+
+  async updateReviewRequest(
+    account: CodeHostAccount,
+    token: Secret,
+    repo: RepositoryRef,
+    number: number,
+    input: { title: string; body: string },
+  ): Promise<ReviewRequest> {
+    const { data } = await this.call<GitHubPull>(
+      'PATCH',
+      account,
+      token,
+      `/repos/${repo.fullPath}/pulls/${number}`,
+      input,
+    );
+    return toReviewRequest(data);
+  }
+
+  async getReviewRequest(
+    account: CodeHostAccount,
+    token: Secret,
+    repo: RepositoryRef,
+    number: number,
+  ): Promise<ReviewRequest> {
+    const { data } = await this.call<GitHubPull>(
+      'GET',
+      account,
+      token,
+      `/repos/${repo.fullPath}/pulls/${number}`,
+    );
+    return toReviewRequest(data);
+  }
+
   private get<T>(account: CodeHostAccount, token: Secret, path: string) {
+    return this.call<T>('GET', account, token, path);
+  }
+
+  private call<T>(
+    method: 'GET' | 'POST' | 'PATCH',
+    account: CodeHostAccount,
+    token: Secret,
+    path: string,
+    body?: unknown,
+  ) {
     const raw = token.reveal();
-    return getJson<T>(
+    return requestJson<T>(
+      method,
       `${apiRoot(account.baseUrl)}${path}`,
       {
         providerLabel: 'GitHub',
@@ -106,6 +217,7 @@ export class GitHubAdapter implements CodeHostAdapter {
           accept: 'application/vnd.github+json',
           'x-github-api-version': '2022-11-28',
         },
+        ...(body !== undefined ? { body } : {}),
       },
       this.http,
     );
@@ -142,4 +254,28 @@ function toRepository(repo: GitHubRepo): RemoteRepository {
     visibility: repo.visibility ?? (repo.private ? 'private' : 'public'),
     access: { pull: repo.permissions?.pull ?? false, push: repo.permissions?.push ?? false },
   };
+}
+
+interface GitHubPull {
+  number: number;
+  html_url: string;
+  state: 'open' | 'closed';
+  draft?: boolean;
+  merged_at?: string | null;
+  title: string;
+}
+
+function toReviewRequest(pull: GitHubPull): ReviewRequest {
+  const state = pull.merged_at
+    ? 'merged'
+    : pull.state === 'closed'
+      ? 'closed'
+      : pull.draft
+        ? 'draft'
+        : 'open';
+  return { number: pull.number, url: pull.html_url, state, title: pull.title };
+}
+
+function encodePath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/');
 }

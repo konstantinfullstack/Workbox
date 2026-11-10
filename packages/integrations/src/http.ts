@@ -19,12 +19,31 @@ export async function getJson<T>(
   init: { headers: Record<string, string>; providerLabel: string; token: string },
   options: HttpOptions = {},
 ): Promise<JsonResponse<T>> {
+  return requestJson<T>('GET', url, init, options);
+}
+
+/**
+ * Sends a JSON request to a code host. Maps transport and HTTP failures to CodeHostError with a
+ * message that is safe to display: provider error text is truncated and scrubbed of the token.
+ */
+export async function requestJson<T>(
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT',
+  url: string,
+  init: { headers: Record<string, string>; providerLabel: string; token: string; body?: unknown },
+  options: HttpOptions = {},
+): Promise<JsonResponse<T>> {
   const doFetch = options.fetch ?? fetch;
   let response: Response;
   try {
     response = await doFetch(url, {
-      method: 'GET',
-      headers: { accept: 'application/json', 'user-agent': 'workbox', ...init.headers },
+      method,
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'workbox',
+        ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}),
+        ...init.headers,
+      },
+      ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
       redirect: 'error',
     });
@@ -67,6 +86,13 @@ export async function getJson<T>(
       throw new CodeHostError(
         'not_found',
         `${init.providerLabel} returned not found${suffix}`,
+        status,
+      );
+    }
+    if (status === 409 || status === 422) {
+      throw new CodeHostError(
+        'rejected',
+        `${init.providerLabel} rejected the request${suffix}`,
         status,
       );
     }

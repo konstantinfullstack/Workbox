@@ -102,7 +102,19 @@ export async function startGitHttpServer(): Promise<GitHttpServer> {
     const work = mkdtempSync(join(tmpdir(), 'workbox-gitwork-'));
     try {
       git(['clone', '--quiet', join(root, repoPath), work]);
-      git(['checkout', '--quiet', '-B', branch], work);
+      // Continue an existing remote branch; otherwise start it from the default branch.
+      const remoteExists = (() => {
+        try {
+          git(['rev-parse', '--verify', '--quiet', `origin/${branch}`], work);
+          return true;
+        } catch {
+          return false;
+        }
+      })();
+      git(
+        ['checkout', '--quiet', '-B', branch, ...(remoteExists ? [`origin/${branch}`] : [])],
+        work,
+      );
       writeFileSync(join(work, `${Date.now()}-${Math.random()}.txt`), message);
       git(['add', '.'], work);
       git(['commit', '--quiet', '-m', message], work);

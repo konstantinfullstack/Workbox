@@ -16,6 +16,7 @@ import {
 } from '#database';
 import {
   checkoutTaskBranch,
+  returnToBaseBranch,
   collectBranchChanges,
   commitTaskChanges,
   GitError,
@@ -28,14 +29,19 @@ import {
   ACTIVE_RUN_STATES,
   AGENT_LABELS,
   CODE_HOST_PROVIDERS,
+  type CheckResult,
   type CodeHostProvider,
   type RunEventType,
+  type VerificationStatus,
   type RunState,
   type TaskState,
 } from '#shared';
 import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { recordAudit } from './audit.js';
+import { describeFailures, runChecks } from './checks-runner.js';
 import type { ConnectionService } from './connection-service.js';
+import { projectChecks } from './project-checks-service.js';
+import type { Publisher } from './publisher.js';
 import type { ActionContext, Transaction } from './context.js';
 import { transitionTaskInTx } from './task-service.js';
 import type { WorkspaceSyncer } from './workspace-syncer.js';
@@ -53,15 +59,20 @@ export interface RunExecutorOptions {
   connections: ConnectionService;
   /** Commit author name (WORKBOX_GIT_AUTHOR_NAME); defaults to the account login. */
   authorName?: string;
+  /** Pushes and opens the draft PR after a successful run (B2). Omitted = commit locally only. */
+  publisher?: Publisher;
+  /** Per check command time limit (default 15 min). */
+  checkTimeoutMs?: number;
 }
 
 const orchestrator: ActionContext = { actor: ORCHESTRATOR_ACTOR };
 
 /**
  * Executes one run on a worker: fetch → task branch in the project's working copy → agent →
- * commit locally → hand the task to QA.
+ * checks (one retry) → commit as the user → push + draft PR → hand the task to QA.
  * Run state and task state always change in the same transaction. Agent failures, timeouts and
- * cancellations end the run cleanly and block the task with the reason. Nothing is pushed (B2).
+ * cancellations end the run cleanly and block the task with the reason. Failed checks keep the
+ * work committed locally but never publish it.
  */
 export class RunExecutor {
   constructor(private readonly options: RunExecutorOptions) {}
@@ -110,6 +121,10 @@ export class RunExecutor {
           event,
         );
 
+      // Tasks start from, and PRs target, the project's base branch (e.g. main or dev).
+
+      const base = ctx.project.defaultBranch;
+
       const sync = await this.options.syncer.sync(ctx.repo.id);
       if (sync.status !== 'ready') {
         return await this.fail(
@@ -119,10 +134,7 @@ export class RunExecutor {
           event,
         );
       }
-      await event(
-        'stage',
-        `Repository up to date (${ctx.repo.defaultBranch} @ ${sync.headSha?.slice(0, 7) ?? 'empty'})`,
-      );
+      await event('stage', `Fetched the latest changes from ${ctx.repo.fullPath}`);
       if (await this.cancelRequested(runId)) return await this.cancelled(runId, 'preparing', event);
 
       const [workspace] = await db
@@ -144,7 +156,7 @@ export class RunExecutor {
         checkout = await checkoutTaskBranch({
           path,
           branch,
-          defaultBranch: ctx.repo.defaultBranch,
+          baseBranch: base,
         });
       } catch (error) {
         if (error instanceof GitError)
@@ -160,71 +172,73 @@ export class RunExecutor {
       });
 
       await this.moveRun(runId, 'preparing', 'running');
+      const checks = projectChecks(ctx.project.config);
+      const allowedCommands = checks.commands.map((c) => c.command);
       const adapter = this.options.agents[run.agent];
-      const controller = new AbortController();
-      const poll = setInterval(() => {
-        void this.cancelRequested(runId).then(
-          (requested) => requested && controller.abort(),
-          () => undefined,
-        );
-      }, this.options.cancelPollMs ?? 2_000);
-      let result: AgentResult;
-      const pending: Promise<void>[] = [];
-      try {
-        result = await adapter.execute(
-          {
-            runId,
-            workspacePath: path,
-            instructions: buildTaskInstructions({
-              projectName: ctx.project.name,
-              repositoryPath: ctx.repo.fullPath,
-              branch,
-              task: ctx.task,
-              note: run.note,
-              checkCommands: [],
-            }),
-            timeoutMs: this.options.timeoutMs ?? 30 * 60_000,
-            allowedCommands: [],
-          },
-          (e: AgentEvent) =>
-            void pending.push(event(e.type, e.message, e.data).catch(() => undefined)),
-          controller.signal,
-        );
-      } finally {
-        clearInterval(poll);
-        await Promise.all(pending);
-      }
-      const usage = {
+
+      /** One agent pass; `note` adds reviewer notes or check failures for the retry. */
+      const agentPass = async (note: string | null): Promise<AgentResult> => {
+        const controller = new AbortController();
+        const poll = setInterval(() => {
+          void this.cancelRequested(runId).then(
+            (requested) => requested && controller.abort(),
+            () => undefined,
+          );
+        }, this.options.cancelPollMs ?? 2_000);
+        const pending: Promise<void>[] = [];
+        try {
+          return await adapter.execute(
+            {
+              runId,
+              workspacePath: path,
+              instructions: buildTaskInstructions({
+                projectName: ctx.project.name,
+                repositoryPath: ctx.repo.fullPath,
+                branch,
+                task: ctx.task,
+                note,
+                checkCommands: allowedCommands,
+              }),
+              timeoutMs: this.options.timeoutMs ?? 30 * 60_000,
+              allowedCommands,
+            },
+            (e: AgentEvent) =>
+              void pending.push(event(e.type, e.message, e.data).catch(() => undefined)),
+            controller.signal,
+          );
+        } finally {
+          clearInterval(poll);
+          await Promise.all(pending);
+        }
+      };
+
+      let result = await agentPass(run.note);
+      let usage = {
         costUsd: result.usage?.costUsd ?? null,
         durationMs: result.usage?.durationMs ?? null,
       };
-
-      if (result.status !== 'completed') {
+      const agentFailed = async (r: AgentResult) => {
         const state: RunState =
-          result.status === 'cancelled'
+          r.status === 'cancelled'
             ? 'cancelled'
-            : result.status === 'timed_out'
+            : r.status === 'timed_out'
               ? 'timed_out'
               : 'failed';
-        await event('failed', result.failureReason ?? `Agent ${result.status}`);
-        // The task's partial work stays uncommitted on its own branch; a re-run continues from it.
-        return await this.finish(
-          runId,
-          'running',
-          state,
-          result.failureReason ?? `Agent ${result.status}`,
-          { ...usage, summary: result.summary || null },
-        );
-      }
-
-      // Verifying (B1: collect, commit locally and show the changes; checks + push arrive in B2).
-      await this.moveRun(runId, 'running', 'verifying');
-      await this.taskTo(
-        run.taskId,
-        'verification',
-        `Run #${run.attempt}: agent finished, verifying`,
-      );
+        await event('failed', r.failureReason ?? `Agent ${r.status}`);
+        // Partial work stays uncommitted on the task's own branch; a re-run continues from it.
+        return this.finish(runId, 'running', state, r.failureReason ?? `Agent ${r.status}`, {
+          ...usage,
+          summary: r.summary || null,
+        });
+      };
+      if (result.status !== 'completed') return await agentFailed(result);
       if (!(await hasUncommittedChanges(path))) {
+        await this.moveRun(runId, 'running', 'verifying');
+        await this.taskTo(
+          run.taskId,
+          'verification',
+          `Run #${run.attempt}: agent finished, verifying`,
+        );
         return await this.finish(
           runId,
           'verifying',
@@ -233,18 +247,76 @@ export class RunExecutor {
           {
             ...usage,
             summary: result.summary,
+            verification: 'skipped',
           },
         );
       }
-      // The branch's full change set versus the default branch: what the PR will show.
-      const changes = await collectBranchChanges(path, ctx.repo.defaultBranch);
+
+      // ---- Verification: the project's confirmed checks, with one bounded retry (spec §6).
+      let checkResults: CheckResult[] = [];
+      let verification: VerificationStatus = 'skipped';
+      if (checks.setup || checks.commands.length > 0) {
+        for (let pass = 1; pass <= 2; pass++) {
+          await event('stage', pass === 1 ? 'Running checks' : 'Running checks again');
+          await this.options.db
+            .update(taskRuns)
+            .set({ verification: 'running' })
+            .where(eq(taskRuns.id, runId));
+          checkResults = await runChecks({
+            cwd: path,
+            setup: checks.setup,
+            commands: checks.commands,
+            ...(this.options.checkTimeoutMs ? { timeoutMs: this.options.checkTimeoutMs } : {}),
+            onStart: (step) =>
+              void event('log', `$ ${step.command}`, { level: 'info' }).catch(() => undefined),
+          });
+          for (const r of checkResults) {
+            await event(
+              r.status === 'passed' ? 'log' : 'failed',
+              `${r.status === 'passed' ? '✓' : '✗'} ${r.name}: ${r.command} (${Math.round(r.durationMs / 1000)} s)`,
+              {
+                level: r.status === 'passed' ? 'info' : 'error',
+                ...(r.status === 'passed' ? {} : { output: r.output.slice(-2_000) }),
+              },
+            );
+          }
+          verification = checkResults.every((r) => r.status === 'passed') ? 'passed' : 'failed';
+          if (verification === 'passed' || pass === 2) break;
+          if (await this.cancelRequested(runId))
+            return await this.cancelled(runId, 'running', event);
+          await event('stage', 'Checks failed: asking the agent to fix them (one retry)');
+          result = await agentPass(
+            [
+              run.note,
+              `The project's checks failed after your changes. Fix the cause, keeping the task's goal.\n\n${describeFailures(checkResults)}`,
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
+          );
+          usage = {
+            costUsd: (usage.costUsd ?? 0) + (result.usage?.costUsd ?? 0) || null,
+            durationMs: (usage.durationMs ?? 0) + (result.usage?.durationMs ?? 0) || null,
+          };
+          if (result.status !== 'completed') return await agentFailed(result);
+        }
+      } else {
+        await event('log', 'No automatic checks configured: review the changes manually.', {
+          level: 'warn',
+        });
+      }
+
+      await this.moveRun(runId, 'running', 'verifying');
+      await this.taskTo(
+        run.taskId,
+        'verification',
+        `Run #${run.attempt}: verifying (${verification})`,
+      );
+      const changes = await collectBranchChanges(path, base);
       await event('stage', `${changes.files.length} file(s) changed on the branch`, {
         files: changes.files.length,
       });
-      await event('log', 'No automatic checks configured yet: review the changes manually.', {
-        level: 'warn',
-      });
 
+      // Always commit, so the work is safe on its own branch and the copy is clean for the next task.
       const author = await this.commitAuthor(ctx.repo.connectionId);
       const commitSha = await commitTaskChanges({
         path,
@@ -257,17 +329,11 @@ export class RunExecutor {
           agent: AGENT_LABELS[run.agent],
         }),
       });
-      if (commitSha) {
-        await event(
-          'stage',
-          `Committed ${commitSha.slice(0, 7)} on ${branch} as ${author.name} (not pushed yet)`,
-          {
-            commitSha,
-          },
-        );
-      }
-      await event('completed', 'Run completed: ready for your review');
-      return await this.finish(runId, 'verifying', 'completed', null, {
+      if (commitSha)
+        await event('stage', `Committed ${commitSha.slice(0, 7)} on ${branch} as ${author.name}`, {
+          commitSha,
+        });
+      const outcome = {
         ...usage,
         summary: result.summary,
         qaSteps: result.qaSteps,
@@ -276,7 +342,70 @@ export class RunExecutor {
         diffTruncated: changes.truncated ? 1 : 0,
         baseSha: changes.baseSha,
         commitSha,
-      });
+        verification,
+        checkResults,
+      };
+
+      /** Leave the working copy on the up-to-date base branch once the work is committed. */
+      const backToBase = async () => {
+        try {
+          if (await returnToBaseBranch(path, base)) {
+            await event('stage', `Switched the working copy back to ${base} (up to date)`);
+          }
+        } catch (error) {
+          await event(
+            'log',
+            `Stayed on ${branch}: ${error instanceof Error ? error.message : 'could not switch back'}`,
+            { level: 'warn' },
+          );
+        }
+      };
+
+      if (verification === 'failed') {
+        await backToBase();
+        const failed = checkResults
+          .filter((r) => r.status !== 'passed')
+          .map((r) => r.name)
+          .join(', ');
+        return await this.finish(
+          runId,
+          'verifying',
+          'failed',
+          `Checks failed after one retry: ${failed}. The work is committed locally on ${branch} (not published).`,
+          outcome,
+        );
+      }
+
+      // Publish: push the branch and open/update the draft pull request.
+      let qaReason: string | undefined;
+      if (this.options.publisher) {
+        await event('stage', 'Publishing: pushing the branch and opening a draft pull request');
+        // Store this run's results first: the PR description is built from them.
+        await this.options.db
+          .update(taskRuns)
+          .set({ ...outcome, updatedAt: new Date() })
+          .where(eq(taskRuns.id, runId));
+        try {
+          const published = await this.options.publisher.publish(run.taskId, orchestrator, {
+            describeRunId: runId,
+          });
+          await event(
+            'stage',
+            `${published.opened ? 'Opened' : 'Updated'} draft ${published.reference.reviewUrl}`,
+            {
+              url: published.reference.reviewUrl,
+            },
+          );
+          qaReason = `Run #${run.attempt} completed: ${changes.files.length} file(s) changed. Draft ${published.reference.reviewUrl}`;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'publishing failed';
+          await event('log', `Not published: ${message}`, { level: 'error' });
+          qaReason = `Run #${run.attempt} completed (${changes.files.length} file(s)), but publishing failed: ${message}`;
+        }
+      }
+      await backToBase();
+      await event('completed', 'Run completed: ready for your review');
+      return await this.finish(runId, 'verifying', 'completed', null, outcome, qaReason);
     } catch (error) {
       const [current] = await db
         .select({ state: taskRuns.state })
@@ -396,6 +525,7 @@ export class RunExecutor {
     to: RunState,
     exitReason: string | null,
     values: Partial<typeof taskRuns.$inferInsert>,
+    qaReason?: string,
   ): Promise<RunState> {
     assertRunTransition(from, to);
     await this.options.db.transaction(async (tx) => {
@@ -419,7 +549,9 @@ export class RunExecutor {
               run.taskId,
               {
                 to: 'ready_for_qa',
-                reason: `Run #${run.attempt} completed: ${count} file(s) changed. Review the changes.`,
+                reason:
+                  qaReason ??
+                  `Run #${run.attempt} completed: ${count} file(s) changed. Review the changes.`,
               },
               orchestrator,
             ),

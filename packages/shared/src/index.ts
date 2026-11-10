@@ -1,3 +1,4 @@
+export * from './checks.js';
 export * from './connections.js';
 export * from './domain.js';
 export * from './errors.js';

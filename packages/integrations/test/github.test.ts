@@ -132,3 +132,76 @@ describe('GitHub helpers', () => {
     expect(parseGitHubExpiry(input)).toBe(expected);
   });
 });
+
+describe('GitHub files and pull requests', () => {
+  const repo = { externalId: '101', fullPath: 'kost/workbox' };
+  beforeEach(() => {
+    fake.reviewRequests.length = 0;
+    const r = fake.tokens.get(FINE)!.repos[0]!;
+    r.files = { 'package.json': '{"scripts":{"test":"vitest"}}', 'docs/a b.md': 'spaced' };
+    r.denyReviewRequests = false;
+  });
+
+  it('reads files (null when missing)', async () => {
+    expect(await adapter.readFile(account(), new Secret(FINE), repo, 'package.json', 'main')).toBe(
+      '{"scripts":{"test":"vitest"}}',
+    );
+    expect(await adapter.readFile(account(), new Secret(FINE), repo, 'docs/a b.md', 'main')).toBe(
+      'spaced',
+    );
+    expect(
+      await adapter.readFile(account(), new Secret(FINE), repo, 'missing.txt', 'main'),
+    ).toBeNull();
+  });
+
+  it('creates a draft pull request, finds it again, updates and reads it', async () => {
+    const token = new Secret(FINE);
+    expect(
+      await adapter.findOpenReviewRequest(account(), token, repo, 'workbox/2-docs'),
+    ).toBeNull();
+    const created = await adapter.createReviewRequest(account(), token, repo, {
+      head: 'workbox/2-docs',
+      base: 'main',
+      title: 'Add docs',
+      body: 'Summary',
+      draft: true,
+    });
+    expect(created).toMatchObject({
+      number: 1,
+      state: 'draft',
+      title: 'Add docs',
+      url: `${fake.baseUrl}/kost/workbox/pull/1`,
+    });
+    expect(fake.requests.at(-1)).toMatchObject({
+      method: 'POST',
+      body: { head: 'workbox/2-docs', base: 'main', draft: true },
+    });
+    expect(
+      await adapter.findOpenReviewRequest(account(), token, repo, 'workbox/2-docs'),
+    ).toMatchObject({ number: 1 });
+    expect(fake.requests.at(-1)?.path).toContain('head=kost%3Aworkbox%2F2-docs');
+    expect(
+      await adapter.updateReviewRequest(account(), token, repo, 1, {
+        title: 'Add docs v2',
+        body: 'B',
+      }),
+    ).toMatchObject({ title: 'Add docs v2' });
+    fake.reviewRequests[0]!.state = 'merged';
+    expect(await adapter.getReviewRequest(account(), token, repo, 1)).toMatchObject({
+      state: 'merged',
+    });
+  });
+
+  it('reports a token without pull-request permission as forbidden', async () => {
+    fake.tokens.get(FINE)!.repos[0]!.denyReviewRequests = true;
+    await expect(
+      adapter.createReviewRequest(account(), new Secret(FINE), repo, {
+        head: 'x',
+        base: 'main',
+        title: 't',
+        body: '',
+        draft: true,
+      }),
+    ).rejects.toMatchObject({ kind: 'forbidden' });
+  });
+});

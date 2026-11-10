@@ -1,5 +1,5 @@
 import type { ChangedFile } from '#shared';
-import { GitError, runGit } from './run.js';
+import { GitError, runGit, type GitCredentials } from './run.js';
 import { hasUncommittedChanges } from './workspace.js';
 
 /** `workbox/12-add-health-endpoint`: always under workbox/, never the default branch. */
@@ -21,8 +21,12 @@ export async function currentBranch(path: string): Promise<string | null> {
 }
 
 /**
- * Switches the project's working copy to the task's branch: created from `origin/<default>` on
- * the first run, reused afterwards (continuing after a block or review).
+ * Switches the project's working copy to the task's branch.
+ *
+ * - **New task:** check out the project's base branch (e.g. main or dev), fast-forward it to the
+ *   server, then create `workbox/<n>-…` from it. Every task starts from the latest base.
+ * - **Existing task** (re-run after a block or review): switch to its branch and fast-forward any
+ *   commits pushed to it on the server.
  *
  * Refuses when there are uncommitted changes that belong to a different branch: Workbox never
  * carries one task's work into another, and never discards work it didn't commit.
@@ -30,45 +34,190 @@ export async function currentBranch(path: string): Promise<string | null> {
 export async function checkoutTaskBranch(options: {
   path: string;
   branch: string;
-  defaultBranch: string;
+  baseBranch: string;
 }): Promise<{ created: boolean }> {
   const { path, branch } = options;
-  if (!branch.startsWith('workbox/'))
+  if (!branch.startsWith('workbox/')) {
     throw new GitError('failed', 'task branches must be under workbox/');
+  }
   const current = await currentBranch(path);
-  if (current === branch) return { created: false };
-  if (await hasUncommittedChanges(path)) {
+  const dirty = await hasUncommittedChanges(path);
+  if (current === branch) {
+    if (!dirty) await fastForwardFromRemote(path, branch);
+    return { created: false };
+  }
+  if (dirty) {
     throw new GitError(
       'failed',
       `the workspace has uncommitted changes on ${current ?? 'a detached HEAD'}; commit or discard them in ${path} first`,
     );
   }
-  const exists = await runGit([
-    '-C',
-    path,
-    'show-ref',
-    '--verify',
-    '--quiet',
-    `refs/heads/${branch}`,
-  ]).then(
+  if (await localBranchExists(path, branch)) {
+    await runGit(['-C', path, 'checkout', '--quiet', branch]);
+    await fastForwardFromRemote(path, branch);
+    return { created: false };
+  }
+  // Published earlier (e.g. from another machine) but not here: continue from the remote copy.
+  if (await remoteBranchSha(path, branch)) {
+    await runGit([
+      '-C',
+      path,
+      'checkout',
+      '--quiet',
+      '--no-track',
+      '-b',
+      branch,
+      `refs/remotes/origin/${branch}`,
+    ]);
+    return { created: true };
+  }
+  // A new task: start from the freshly updated base branch.
+  await updateBaseBranch(path, options.baseBranch);
+  await runGit(['-C', path, 'checkout', '--quiet', '--no-track', '-b', branch]);
+  return { created: true };
+}
+
+/**
+ * Checks out the base branch (e.g. main or dev) and fast-forwards it to the server copy. Workbox
+ * never commits to the base branch, so this is always a fast-forward unless someone committed
+ * there by hand in the workspace, which is refused rather than overwritten.
+ * Returns the base branch's commit.
+ */
+export async function updateBaseBranch(path: string, baseBranch: string): Promise<string> {
+  if (!(await remoteBranchSha(path, baseBranch))) {
+    throw new GitError(
+      'failed',
+      `the base branch "${baseBranch}" doesn't exist on the server; check the project's Default branch setting`,
+    );
+  }
+  if (await hasUncommittedChanges(path)) {
+    throw new GitError(
+      'failed',
+      `the workspace has uncommitted changes; commit or discard them in ${path} first`,
+    );
+  }
+  if (await localBranchExists(path, baseBranch)) {
+    await runGit(['-C', path, 'checkout', '--quiet', baseBranch]);
+    try {
+      await runGit([
+        '-C',
+        path,
+        'merge',
+        '--ff-only',
+        '--quiet',
+        `refs/remotes/origin/${baseBranch}`,
+      ]);
+    } catch {
+      throw new GitError(
+        'rejected',
+        `the local ${baseBranch} in ${path} has commits that aren't on the server; Workbox never commits to ${baseBranch}, so resolve this by hand`,
+      );
+    }
+  } else {
+    await runGit([
+      '-C',
+      path,
+      'checkout',
+      '--quiet',
+      '--no-track',
+      '-b',
+      baseBranch,
+      `refs/remotes/origin/${baseBranch}`,
+    ]);
+  }
+  const { stdout } = await runGit(['-C', path, 'rev-parse', 'HEAD']);
+  return stdout.trim();
+}
+
+/**
+ * After a run, leave the working copy on the up-to-date base branch, if it's clean (it is once
+ * the run's work is committed). Returns false when there is uncommitted work to keep in place.
+ */
+export async function returnToBaseBranch(path: string, baseBranch: string): Promise<boolean> {
+  if (await hasUncommittedChanges(path)) return false;
+  await updateBaseBranch(path, baseBranch);
+  return true;
+}
+
+async function localBranchExists(path: string, branch: string): Promise<boolean> {
+  return runGit(['-C', path, 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(
     () => true,
     () => false,
   );
-  if (exists) {
-    await runGit(['-C', path, 'checkout', '--quiet', branch]);
-    return { created: false };
+}
+
+/**
+ * If someone pushed to the task branch on the server (e.g. a fix on the PR), bring it in before
+ * the agent starts: fast-forward only. Diverged histories are never merged or overwritten
+ * automatically.
+ */
+async function fastForwardFromRemote(path: string, branch: string): Promise<void> {
+  const remote = await remoteBranchSha(path, branch);
+  if (!remote) return;
+  try {
+    await runGit(['-C', path, 'merge', '--ff-only', '--quiet', `refs/remotes/origin/${branch}`]);
+  } catch {
+    throw new GitError(
+      'rejected',
+      `${branch} has different commits locally and on the server; reconcile them in ${path} (or on the pull request) first`,
+    );
   }
-  await runGit([
+}
+
+async function remoteBranchSha(path: string, branch: string): Promise<string | null> {
+  try {
+    const { stdout } = await runGit([
+      '-C',
+      path,
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      `refs/remotes/origin/${branch}^{commit}`,
+    ]);
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Commits on `branch` that are not on origin/<default> (what a PR would contain). */
+export async function commitsAhead(
+  path: string,
+  branch: string,
+  defaultBranch: string,
+): Promise<number> {
+  const { stdout } = await runGit([
     '-C',
     path,
-    'checkout',
-    '--quiet',
-    '--no-track',
-    '-b',
-    branch,
-    `refs/remotes/origin/${options.defaultBranch}`,
+    'rev-list',
+    '--count',
+    `refs/remotes/origin/${defaultBranch}..refs/heads/${branch}`,
   ]);
-  return { created: true };
+  return Number(stdout.trim());
+}
+
+/**
+ * Pushes the task branch to origin with the account token (supplied per command, never stored).
+ * Never force-pushes, never pushes anything but workbox/ branches.
+ */
+export async function pushTaskBranch(options: {
+  path: string;
+  branch: string;
+  credentials: GitCredentials;
+  allowHttp?: boolean;
+}): Promise<string> {
+  if (!options.branch.startsWith('workbox/'))
+    throw new GitError('failed', 'Workbox only pushes workbox/ branches');
+  const ref = `refs/heads/${options.branch}`;
+  await runGit(['-C', options.path, 'push', '--quiet', '--no-verify', 'origin', `${ref}:${ref}`], {
+    credentials: options.credentials,
+    ...(options.allowHttp ? { allowHttp: true } : {}),
+  });
+  // Record the remote ref locally too, so later fast-forward checks see what was pushed.
+  const { stdout } = await runGit(['-C', options.path, 'rev-parse', ref]);
+  const sha = stdout.trim();
+  await runGit(['-C', options.path, 'update-ref', `refs/remotes/origin/${options.branch}`, sha]);
+  return sha;
 }
 
 export interface BranchChanges {

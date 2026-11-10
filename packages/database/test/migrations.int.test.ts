@@ -93,6 +93,7 @@ describe('migrations', () => {
         'audit_logs',
         'connections',
         'credentials',
+        'git_references',
         'project_repositories',
         'projects',
         'run_events',

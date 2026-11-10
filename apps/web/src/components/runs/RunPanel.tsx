@@ -77,8 +77,9 @@ export function RunPanel({ task }: { task: Task }) {
                     : 'Run with Claude Code'}
               </button>
               <p className="muted small">
-                The agent works in its own checkout on a <span className="mono">workbox/…</span>{' '}
-                branch. Nothing is pushed yet: you review the changes here.
+                The agent works on a <span className="mono">workbox/…</span> branch in the project's
+                working copy. After the checks pass, Workbox pushes it and opens a draft pull
+                request for your review.
               </p>
             </>
           ) : (
@@ -160,6 +161,36 @@ function RunView({
           )}
           {run.exitReason && run.state !== 'completed' && (
             <p className="warning-text">{run.exitReason}</p>
+          )}
+          {run.state !== 'queued' && (
+            <p className="small">
+              Verification:{' '}
+              <span className={`badge verification-${run.verification}`}>{run.verification}</span>
+              {run.commitSha && (
+                <span className="muted">
+                  {' '}
+                  · committed <span className="mono">{run.commitSha.slice(0, 7)}</span>
+                </span>
+              )}
+            </p>
+          )}
+          {run.checkResults.length > 0 && (
+            <ul className="check-results" aria-label="Check results">
+              {run.checkResults.map((check) => (
+                <li key={check.name}>
+                  <details>
+                    <summary>
+                      <span className={check.status === 'passed' ? 'ok' : 'bad'}>
+                        {check.status === 'passed' ? '✓' : '✗'}
+                      </span>{' '}
+                      {check.name} <span className="mono small">{check.command}</span>{' '}
+                      <span className="muted small">({Math.round(check.durationMs / 1000)} s)</span>
+                    </summary>
+                    <pre className="check-output">{check.output || '(no output)'}</pre>
+                  </details>
+                </li>
+              ))}
+            </ul>
           )}
           {run.summary && (
             <>

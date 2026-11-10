@@ -153,6 +153,10 @@ folder). After a change, the worker re-syncs every clone into the new location a
 - **Tokens** are given to git only for each clone or fetch, through a temporary prompt helper. They
   are never written to `.git/config`, the remote URL or logs. Git ignores your personal
   `~/.gitconfig` and credential helpers while doing this.
+- **Every new task starts from the latest base branch:** the project's **Default branch** setting,
+  e.g. `main` or `dev`, which is also where its pull request goes. Workbox fetches, checks out the
+  base, fast-forwards it and branches from it. After a successful run the copy is back on that
+  up-to-date base branch.
 - **Agent runs** switch this copy to the task's `workbox/<n>-…` branch, then commit the result
   there as you (`WORKBOX_GIT_AUTHOR_NAME` + the account's no-reply email). You can open the folder
   in your editor to look around, but do your own coding in your own clone. Workbox won't start a
@@ -162,6 +166,22 @@ folder). After a change, the worker re-syncs every clone into the new location a
 - **Recovery:** at startup the worker re-queues any linked repository that isn't cloned yet.
 - **The folder never gets committed.** `workspaces/` is in `.gitignore`. Any other folder you
   choose inside the Workbox repo must be git-ignored too, or the worker refuses to start.
+
+### Checks and publishing
+
+- **Checks:** on the project page, **Checks → Detect from repository** proposes commands from your
+  repo (e.g. `pnpm install --frozen-lockfile`, then lint, typecheck, test). Edit or confirm them.
+  Runs need this decision once; "no automatic checks" is a valid choice.
+- **After each run:**
+  1. the checks run in the working copy; a failure gives the agent one retry with the error
+     output
+  2. Workbox commits as you
+  3. if the checks pass, it pushes the `workbox/…` branch and opens or updates a **draft** pull
+     request (GitHub) or merge request (GitLab)
+  4. you review, mark it ready and merge it yourself; Workbox never merges
+- **Retry:** if pushing or opening the PR fails (e.g. the token lacks _Pull requests: write_), the
+  task's **Git** panel shows why, with a **Retry publishing** button.
+- **Fixes on the PR branch:** if you push a fix there yourself, the next run starts from it.
 
 ### Rotating the master key
 

@@ -101,3 +101,56 @@ describe('GitLabAdapter', () => {
     expect(fake.requests.at(-1)?.path).toBe('/api/v4/projects/42');
   });
 });
+
+describe('GitLab files and merge requests', () => {
+  const repo = { externalId: '42', fullPath: 'company/platform/api' };
+  beforeEach(() => {
+    fake.reviewRequests.length = 0;
+    fake.tokens.get(PROJECT_TOKEN)!.repos[0]!.files = {
+      'go.mod': 'module x',
+      'src/main.go': 'package main',
+    };
+  });
+
+  it('reads files by path (null when missing)', async () => {
+    expect(
+      await adapter.readFile(account(), new Secret(PROJECT_TOKEN), repo, 'go.mod', 'main'),
+    ).toBe('module x');
+    expect(
+      await adapter.readFile(account(), new Secret(PROJECT_TOKEN), repo, 'src/main.go', 'main'),
+    ).toBe('package main');
+    expect(fake.requests.at(-1)?.path).toContain('/repository/files/src%2Fmain.go?ref=main');
+    expect(
+      await adapter.readFile(account(), new Secret(PROJECT_TOKEN), repo, 'Cargo.toml', 'main'),
+    ).toBeNull();
+  });
+
+  it('creates draft merge requests via the title prefix and keeps it on update', async () => {
+    const token = new Secret(PROJECT_TOKEN);
+    const created = await adapter.createReviewRequest(account(), token, repo, {
+      head: 'workbox/5-x',
+      base: 'develop',
+      title: 'Fix it',
+      body: 'Summary',
+      draft: true,
+    });
+    expect(created).toMatchObject({ number: 1, state: 'draft', title: 'Fix it' });
+    expect(fake.requests.at(-1)).toMatchObject({
+      method: 'POST',
+      body: { source_branch: 'workbox/5-x', target_branch: 'develop', title: 'Draft: Fix it' },
+    });
+    expect(
+      await adapter.findOpenReviewRequest(account(), token, repo, 'workbox/5-x'),
+    ).toMatchObject({ number: 1, state: 'draft' });
+    expect(
+      await adapter.updateReviewRequest(account(), token, repo, 1, {
+        title: 'Fix it properly',
+        body: 'B',
+      }),
+    ).toMatchObject({
+      title: 'Fix it properly',
+      state: 'draft',
+    });
+    expect(fake.reviewRequests[0]!.title).toBe('Draft: Fix it properly');
+  });
+});

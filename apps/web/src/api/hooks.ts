@@ -1,4 +1,5 @@
 import type {
+  ConfirmChecksInput,
   CodeHostProvider,
   CreateConnectionInput,
   LinkRepositoryInput,
@@ -30,6 +31,8 @@ export const keys = {
   runReadiness: (taskId: string) => ['run-readiness', taskId] as const,
   runEvents: (runId: string) => ['run-events', runId] as const,
   runDiff: (runId: string) => ['run-diff', runId] as const,
+  checks: (project: string) => ['checks', project] as const,
+  taskGit: (taskId: string) => ['task-git', taskId] as const,
 };
 
 export const useProjects = (status?: ProjectStatus) =>
@@ -255,4 +258,36 @@ export function useRunActions(taskId: string) {
       onSuccess: invalidate,
     }),
   };
+}
+
+export const useProjectChecks = (project: string) =>
+  useQuery({
+    queryKey: keys.checks(project),
+    queryFn: () => api.projectChecks(project),
+    enabled: project !== '',
+  });
+
+export function useChecksActions(project: string) {
+  const invalidate = useInvalidateAll();
+  return {
+    // Detection reads files from the code host; it changes nothing, so no invalidation.
+    detect: useMutation({ mutationFn: () => api.detectChecks(project) }),
+    confirm: useMutation({
+      mutationFn: (input: ConfirmChecksInput) => api.confirmChecks(project, input),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+export const useTaskGit = (taskId: string) =>
+  useQuery({
+    queryKey: keys.taskGit(taskId),
+    queryFn: () => api.taskGit(taskId),
+    enabled: taskId !== '',
+    refetchInterval: REFRESH_INTERVAL_MS,
+  });
+
+export function usePublishTask(taskId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({ mutationFn: () => api.publishTask(taskId), onSuccess: invalidate });
 }

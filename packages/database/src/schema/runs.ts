@@ -5,6 +5,9 @@ import {
   RUN_STATES,
   type AgentRuntime,
   type ChangedFile,
+  type CheckResult,
+  type VerificationStatus,
+  VERIFICATION_STATUSES,
   type RunEventType,
   type RunState,
 } from '#shared';
@@ -54,6 +57,12 @@ export const taskRuns = pgTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    /** Spec §5 verification state, separate from the run state. */
+    verification: text('verification').$type<VerificationStatus>().notNull().default('pending'),
+    checkResults: jsonb('check_results')
+      .$type<CheckResult[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     changedFiles: jsonb('changed_files')
       .$type<ChangedFile[]>()
       .notNull()
@@ -74,6 +83,10 @@ export const taskRuns = pgTable(
     unique('task_runs_task_attempt_unique').on(table.taskId, table.attempt),
     check('task_runs_state_valid', inList(sql`${table.state}`, RUN_STATES)),
     check('task_runs_agent_valid', inList(sql`${table.agent}`, AGENT_RUNTIMES)),
+    check(
+      'task_runs_verification_valid',
+      inList(sql`${table.verification}`, VERIFICATION_STATUSES),
+    ),
     // One writer per repository (spec §6): at most one active run per project.
     uniqueIndex('task_runs_one_active_per_project')
       .on(table.projectId)

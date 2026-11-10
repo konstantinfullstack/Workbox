@@ -138,6 +138,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         if (stderr.length < 50) stderr.push(line.slice(0, 500));
       });
 
+      // The CLI may exit before reading its input (bad flags, auth failure): ignore EPIPE on stdin;
+      // the exit is reported through 'close' like any other failure.
+      child.stdin.on('error', () => undefined);
       child.stdin.end(task.instructions);
 
       child.on('close', (code) => {

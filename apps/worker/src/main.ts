@@ -13,7 +13,7 @@ import { createDatabase } from '#database';
 import { assertWorkspacesRoot } from '#git';
 import { createCodeHostRegistry } from '#integrations';
 import { createAgentRegistry } from '#agents';
-import { ConnectionService, RunExecutor, WorkspaceSyncer } from '#services';
+import { ConnectionService, Publisher, RunExecutor, WorkspaceSyncer } from '#services';
 import { QUEUE_NAMES } from '#shared';
 import { Keyring, VaultKeyError } from '#vault';
 import { Queue } from 'bullmq';
@@ -45,11 +45,9 @@ async function main(): Promise<void> {
     applicationName: SERVICE_NAME,
     max: 4,
   });
-  const connections = new ConnectionService({
-    db: database.db,
-    keyring,
-    codeHosts: createCodeHostRegistry(),
-  });
+  const codeHosts = createCodeHostRegistry();
+  const connections = new ConnectionService({ db: database.db, keyring, codeHosts });
+  const publisher = new Publisher(database.db, codeHosts, connections);
   const syncer = new WorkspaceSyncer({ db: database.db, connections, root, workerId });
   const executor = new RunExecutor({
     db: database.db,
@@ -60,6 +58,7 @@ async function main(): Promise<void> {
     workerId,
     timeoutMs: config.WORKBOX_RUN_TIMEOUT_MINUTES * 60_000,
     connections,
+    publisher,
     ...(config.WORKBOX_GIT_AUTHOR_NAME ? { authorName: config.WORKBOX_GIT_AUTHOR_NAME } : {}),
   });
 
@@ -87,7 +86,7 @@ async function main(): Promise<void> {
   });
   // Recover before consuming: runs orphaned by a crash are failed, queued ones re-enqueued.
   const recovery = await executor.recover();
-  const runWorker = createRunWorker({ redisUrl: cacheUrl, executor, logger: child });
+  const runWorker = createRunWorker({ redisUrl: cacheUrl, executor, publisher, logger: child });
   const runQueue = new Queue(QUEUE_NAMES.runs, {
     connection: { url: cacheUrl, maxRetriesPerRequest: null },
   });

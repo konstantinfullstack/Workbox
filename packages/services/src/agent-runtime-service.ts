@@ -23,6 +23,8 @@ export interface WorkerGateway {
   enqueueWorkspaceRemoval?(projectSlug: string): Promise<void>;
   /** Queues an agent run for execution by a worker. */
   enqueueRun?(runId: string): Promise<void>;
+  /** Queues push + draft PR for a task's branch. */
+  enqueuePublish?(taskId: string): Promise<void>;
 }
 
 const LOCAL_BASE_URL = 'http://localhost';

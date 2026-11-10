@@ -1,6 +1,11 @@
 import type { Logger } from '#core';
-import type { RunExecutor } from '#services';
-import { executeRunJobDataSchema, QUEUE_NAMES, RUN_JOB_NAMES } from '#shared';
+import type { Publisher, RunExecutor } from '#services';
+import {
+  executeRunJobDataSchema,
+  publishTaskJobDataSchema,
+  QUEUE_NAMES,
+  RUN_JOB_NAMES,
+} from '#shared';
 import { UnrecoverableError, Worker, type Job, type Queue } from 'bullmq';
 
 /**
@@ -11,12 +16,26 @@ import { UnrecoverableError, Worker, type Job, type Queue } from 'bullmq';
 export function createRunWorker(options: {
   redisUrl: string;
   executor: RunExecutor;
+  publisher: Publisher;
   logger: Logger;
   prefix?: string;
 }): Worker {
   const worker = new Worker(
     QUEUE_NAMES.runs,
     async (job: Job) => {
+      if (job.name === RUN_JOB_NAMES.publish) {
+        // Manual (re)publish: push the task branch and open/update its draft PR. Failures are
+        // recorded on the task's git reference; the job itself completes.
+        const { taskId } = publishTaskJobDataSchema.parse(job.data);
+        try {
+          const result = await options.publisher.publish(taskId);
+          options.logger.info({ taskId, url: result.reference.reviewUrl }, 'task published');
+          return { ok: true, url: result.reference.reviewUrl };
+        } catch (error) {
+          options.logger.warn({ taskId, err: error }, 'publish failed');
+          return { ok: false };
+        }
+      }
       if (job.name !== RUN_JOB_NAMES.execute)
         throw new UnrecoverableError(`unknown job name: ${job.name}`);
       const { runId } = executeRunJobDataSchema.parse(job.data);

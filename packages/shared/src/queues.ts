@@ -65,7 +65,11 @@ export const removeWorkspaceJobDataSchema = z.object({
 });
 export type RemoveWorkspaceJobData = z.infer<typeof removeWorkspaceJobDataSchema>;
 
-export const RUN_JOB_NAMES = { execute: 'execute-run' } as const;
+export const RUN_JOB_NAMES = { execute: 'execute-run', publish: 'publish-task' } as const;
 
 export const executeRunJobDataSchema = z.object({ runId: z.uuid() });
 export type ExecuteRunJobData = z.infer<typeof executeRunJobDataSchema>;
+
+/** Push a task's branch and open/update its draft pull request (retry or manual publish). */
+export const publishTaskJobDataSchema = z.object({ taskId: z.uuid() });
+export type PublishTaskJobData = z.infer<typeof publishTaskJobDataSchema>;

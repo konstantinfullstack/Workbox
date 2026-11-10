@@ -21,6 +21,8 @@ export function toTaskRun(row: TaskRunRow): TaskRun {
     summary: row.summary,
     qaSteps: row.qaSteps,
     changedFiles: row.changedFiles,
+    verification: row.verification,
+    checkResults: row.checkResults,
     exitReason: row.exitReason,
     costUsd: row.costUsd,
     durationMs: row.durationMs,

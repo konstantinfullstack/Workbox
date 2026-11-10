@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { checkResultSchema, VERIFICATION_STATUSES } from './checks.js';
 
 /** Spec §5 run state machine. Distinct from the task state machine. */
 export const RUN_STATES = [
@@ -61,6 +62,8 @@ export const taskRunSchema = z.object({
   summary: z.string().nullable(),
   qaSteps: z.array(z.string()),
   changedFiles: z.array(changedFileSchema),
+  verification: z.enum(VERIFICATION_STATUSES),
+  checkResults: z.array(checkResultSchema),
   exitReason: z.string().nullable(),
   costUsd: z.number().nullable(),
   durationMs: z.number().int().nullable(),

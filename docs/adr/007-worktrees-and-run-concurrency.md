@@ -14,9 +14,15 @@ there is already only one active run per project, separate folders bought no par
 
 - **One normal working copy per project:** `workspaces/<slug>/` (git-ignored in the Workbox
   repo). The repository identity lives in `.git/workbox.json`, never in the working tree.
-- **A branch per task:** `workbox/<n>-<title-slug>`, created from `origin/<default>` on the first
-  run and reused afterwards. A run switches the working copy to its task's branch. The default
-  branch is never committed to.
+- **A branch per task, always from the latest base** (user request, 2026-11-10):
+  - the base is the project's **Default branch** setting (e.g. `main` or `dev`), which is also the
+    PR target
+  - for a new task, the run fetches, checks out the base, fast-forwards it to the server, then
+    creates `workbox/<n>-<title-slug>` from it
+  - re-runs of the same task reuse its branch and fast-forward commits pushed to it on the server
+  - after a successful (committed) run, the working copy returns to the up-to-date base branch
+  - the base branch is never committed to; if it has local commits, the run is refused, not
+    overwritten
 - **Commit at the end of every successful run** on the task branch:
   - author and committer = the user (`WORKBOX_GIT_AUTHOR_NAME`) at the account's no-reply address
     (`<id>+<login>@users.noreply.github.com`, GitLab `<id>-<user>@users.noreply.<host>`)
