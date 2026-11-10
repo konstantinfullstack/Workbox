@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createWriteStream, type WriteStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type {
   AgentAdapter,
@@ -91,6 +92,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         denials: number;
       } | null = null;
       const stderr: string[] = [];
+      // Raw stream-json lines (plus stderr, wrapped) for the run's saved transcript.
+      let transcript: WriteStream | null = task.transcriptPath
+        ? createWriteStream(task.transcriptPath, { flags: 'a', mode: 0o600 })
+        : null;
+      transcript?.on('error', () => {
+        transcript = null; // a full disk must not fail the run
+      });
 
       const killGroup = () => {
         try {
@@ -130,11 +138,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       });
 
       createInterface({ input: child.stdout }).on('line', (line) => {
+        transcript?.write(`${line}\n`);
         const parsed = parseLine(line);
         if (parsed.event) emit(parsed.event);
         if (parsed.result) result = parsed.result;
       });
       createInterface({ input: child.stderr }).on('line', (line) => {
+        transcript?.write(`${JSON.stringify({ type: 'workbox_stderr', line })}\n`);
         if (stderr.length < 50) stderr.push(line.slice(0, 500));
       });
 
@@ -189,7 +199,9 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         finished = true;
         clearTimeout(timer);
         signal.removeEventListener('abort', onAbort);
-        resolve(value);
+        // Flush the transcript before reporting, so the file is complete when it's recorded.
+        if (transcript) transcript.end(() => resolve(value));
+        else resolve(value);
       }
     });
   }

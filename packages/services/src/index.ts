@@ -2,6 +2,7 @@ import type { Database } from '#database';
 import { createCodeHostRegistry, type CodeHostRegistry } from '#integrations';
 import type { Keyring } from '#vault';
 import { AgentRuntimeService, type WorkerGateway } from './agent-runtime-service.js';
+import { ArtifactStore } from './artifact-store.js';
 import { ConnectionService } from './connection-service.js';
 import { ContinueService } from './continue-service.js';
 import { ProjectChecksService } from './project-checks-service.js';
@@ -12,6 +13,7 @@ import { TaskGitService } from './task-git-service.js';
 import { TaskService } from './task-service.js';
 
 export { AgentRuntimeService, type WorkerGateway } from './agent-runtime-service.js';
+export { artifactSlug, ArtifactStore } from './artifact-store.js';
 export { ConnectionService, credentialContext } from './connection-service.js';
 export { ContinueService } from './continue-service.js';
 export type { ActionContext } from './context.js';
@@ -48,6 +50,8 @@ export interface Services {
   checks: ProjectChecksService;
   git: TaskGitService;
   continuation: ContinueService;
+  /** Run files; null when no artifacts folder is configured (tests). */
+  artifacts: ArtifactStore | null;
 }
 
 export interface ServiceDeps {
@@ -56,6 +60,8 @@ export interface ServiceDeps {
   codeHosts?: CodeHostRegistry;
   workerGateway?: WorkerGateway;
   now?: () => Date;
+  /** WORKBOX_ARTIFACTS_DIR and WORKBOX_ARTIFACT_RETENTION_DAYS. */
+  artifacts?: { root: string; retentionDays: number };
 }
 
 export function createServices(deps: ServiceDeps): Services {
@@ -77,5 +83,8 @@ export function createServices(deps: ServiceDeps): Services {
     checks: new ProjectChecksService(deps.db, codeHosts, connections),
     git: new TaskGitService(deps.db, codeHosts, connections, deps.workerGateway),
     continuation: new ContinueService(deps.db, runs, deps.now),
+    artifacts: deps.artifacts
+      ? new ArtifactStore(deps.db, deps.artifacts.root, deps.artifacts.retentionDays, deps.now)
+      : null,
   };
 }

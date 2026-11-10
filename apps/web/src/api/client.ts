@@ -11,6 +11,8 @@ import {
   type GitReference,
   type ProjectChecks,
   runDiffSchema,
+  runArtifactSchema,
+  type RunArtifact,
   runEventSchema,
   taskRunSchema,
   type RunDiff,
@@ -221,6 +223,14 @@ export const api = {
     (await request('GET', `/runs/${runId}/events?limit=1000`, eventList)).items,
   runDiff: (runId: string): Promise<RunDiff> =>
     request('GET', `/runs/${runId}/diff`, runDiffSchema),
+  runArtifacts: async (runId: string): Promise<RunArtifact[]> =>
+    (
+      await request(
+        'GET',
+        `/runs/${runId}/artifacts`,
+        z.object({ items: z.array(runArtifactSchema) }),
+      )
+    ).items,
   cancelRun: (runId: string): Promise<TaskRun> =>
     request('POST', `/runs/${runId}/cancel`, taskRunSchema),
 

@@ -52,7 +52,15 @@ async function main(): Promise<void> {
     version: WORKBOX_VERSION,
     logLevel: config.LOG_LEVEL,
     corsOrigins: config.CORS_ORIGINS,
-    services: createServices({ db: database.db, keyring, workerGateway }),
+    services: createServices({
+      db: database.db,
+      keyring,
+      workerGateway,
+      artifacts: {
+        root: config.WORKBOX_ARTIFACTS_DIR,
+        retentionDays: config.WORKBOX_ARTIFACT_RETENTION_DAYS,
+      },
+    }),
     ...(existsSync(join(WEB_ROOT, 'index.html')) ? { webRoot: WEB_ROOT } : {}),
     readinessChecks: {
       postgres: () => database.ping(),

@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ClaudeCodeAdapter } from '#agents';
@@ -6,19 +6,21 @@ import { DomainError } from '#core';
 import { createDatabase, type DatabaseHandle } from '#database';
 import { deleteMergedTaskBranch, runGit } from '#git';
 import { createCodeHostRegistry, type CodeHostRegistry } from '#integrations';
-import { LOCAL_USER_ACTOR } from '#shared';
+import { ERROR_CODES, LOCAL_USER_ACTOR } from '#shared';
 import { generateMasterKey, Keyring, Secret } from '#vault';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startFakeGitHub, type FakeCodeHost } from '../../../test/fake-code-hosts.js';
 import { startGitHttpServer, type GitHttpServer } from '../../../test/git-http-server.js';
 import { createMigratedTestDatabase, type TestDatabase } from '../../../test/support.js';
 import {
+  ArtifactStore,
   createServices,
   Publisher,
   REVIEW_SYNC_ACTOR,
   ReviewSync,
   RunExecutor,
   WorkspaceSyncer,
+  type RunExecutorOptions,
   type Services,
 } from '../src/index.js';
 
@@ -36,7 +38,11 @@ let publisher: Publisher;
 let project: { id: string; slug: string };
 let codeHosts: CodeHostRegistry;
 
-function executor(name: string, body: string): RunExecutor {
+function executor(
+  name: string,
+  body: string,
+  extra: Partial<RunExecutorOptions> = {},
+): RunExecutor {
   const path = join(scripts, name);
   writeFileSync(
     path,
@@ -53,6 +59,7 @@ function executor(name: string, body: string): RunExecutor {
     connections: services.connections,
     authorName: 'Konstantin Test',
     publisher,
+    ...extra,
   });
 }
 const done = (summary: string) =>
@@ -444,5 +451,75 @@ describe('pull request sync', () => {
     const status = await services.continuation.status(project.slug);
     expect(status).toMatchObject({ canStart: false, reason: 'blocked', task: { id: task.id } });
     expect(status.message).toMatch(/closed without merging/);
+  });
+});
+
+describe('run files', () => {
+  it('saves the agent transcript, the full output of every check pass and the patch; deletes them after expiry', async () => {
+    const artifactsRoot = mkdtempSync(join(tmpdir(), 'workbox-artifacts-'));
+    try {
+      const store = new ArtifactStore(handle.db, artifactsRoot, 7);
+      const task = await services.tasks.create(project.id, { title: 'Keep the files' }, ctx);
+      const run = await services.runs.start(task.id, {}, ctx);
+      const counter = join(scripts, 'files-counter');
+      writeFileSync(counter, '0');
+      const ex = executor(
+        'files',
+        `const n=Number(fs.readFileSync(${JSON.stringify(counter)},'utf8'))+1;fs.writeFileSync(${JSON.stringify(counter)},String(n));` +
+          `process.stderr.write('pass '+n+' on stderr\\n');` +
+          `fs.writeFileSync('STATUS', n===1?'fail\\n':'pass\\n');` +
+          done('Kept the files.'),
+        { artifacts: store },
+      );
+      expect(await ex.execute(run.id)).toBe('completed');
+
+      const files = await store.list(run.id);
+      expect(files.map((f) => [f.kind, f.name])).toEqual([
+        ['check_output', 'checks/1-1-status.log'],
+        ['check_output', 'checks/2-1-status.log'],
+        ['patch', 'branch.patch'],
+        ['transcript', 'agent-transcript.jsonl'],
+      ]);
+      const read = async (name: string) => {
+        const file = files.find((f) => f.name === name)!;
+        return readFileSync((await store.open(run.id, file.id)).path, 'utf8');
+      };
+      // Both agent passes, raw, plus stderr.
+      const transcript = (await read('agent-transcript.jsonl')).trim().split('\n');
+      expect(transcript.filter((l) => l.includes('"type":"result"'))).toHaveLength(2);
+      expect(transcript).toContain(
+        JSON.stringify({ type: 'workbox_stderr', line: 'pass 1 on stderr' }),
+      );
+      expect(await read('checks/1-1-status.log')).toMatch(
+        /^\$ grep -qx pass STATUS\n[\s\S]*\[failed, exit code 1/,
+      );
+      expect(await read('checks/2-1-status.log')).toMatch(/\[passed, exit code 0/);
+      const patch = await read('branch.patch');
+      expect(patch).toMatch(/^From [0-9a-f]{40} /);
+      expect(patch).toContain('Subject: [PATCH] Keep the files');
+      expect(patch).toContain('+pass');
+      expect(files.every((f) => f.sizeBytes > 0)).toBe(true);
+      const days = (Date.parse(files[0]!.expiresAt) - Date.now()) / 86_400_000;
+      expect(days).toBeGreaterThan(6.9);
+      expect(days).toBeLessThanOrEqual(7);
+
+      // Nothing escapes the folder.
+      await expect(store.prepare(run.id, '../../etc/passwd')).rejects.toThrow(/escapes/);
+
+      // After 7 days: files, rows and the run folder are gone.
+      const later = new ArtifactStore(
+        handle.db,
+        artifactsRoot,
+        7,
+        () => new Date(Date.now() + 8 * 86_400_000),
+      );
+      expect(await later.purgeExpired()).toBe(4);
+      expect(await store.list(run.id)).toEqual([]);
+      expect(existsSync(join(artifactsRoot, run.id))).toBe(false);
+      const gone = await store.open(run.id, files[0]!.id).catch((e: unknown) => e);
+      expect((gone as DomainError).code).toBe(ERROR_CODES.notFound);
+    } finally {
+      rmSync(artifactsRoot, { recursive: true, force: true });
+    }
   });
 });
