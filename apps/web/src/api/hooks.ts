@@ -33,6 +33,7 @@ export const keys = {
   runDiff: (runId: string) => ['run-diff', runId] as const,
   checks: (project: string) => ['checks', project] as const,
   taskGit: (taskId: string) => ['task-git', taskId] as const,
+  continueStatus: (project: string) => ['continue', project] as const,
 };
 
 export const useProjects = (status?: ProjectStatus) =>
@@ -290,4 +291,22 @@ export const useTaskGit = (taskId: string) =>
 export function usePublishTask(taskId: string) {
   const invalidate = useInvalidateAll();
   return useMutation({ mutationFn: () => api.publishTask(taskId), onSuccess: invalidate });
+}
+
+/** "Continue development": what runs next, or why work stopped. Polls faster while a run is active. */
+export const useContinueStatus = (project: string) =>
+  useQuery({
+    queryKey: keys.continueStatus(project),
+    queryFn: () => api.continueStatus(project),
+    enabled: project !== '',
+    refetchInterval: (query) =>
+      query.state.data?.reason === 'running' ? 2_000 : REFRESH_INTERVAL_MS,
+  });
+
+export function useContinueDevelopment(project: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: () => api.continueDevelopment(project),
+    onSuccess: invalidate,
+  });
 }

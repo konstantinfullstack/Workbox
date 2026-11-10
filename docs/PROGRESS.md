@@ -2,7 +2,9 @@
 
 ## Current milestone
 
-**M4 B2 — checks, push and draft pull requests: implemented on `feat/m4-b2-push-and-pr`, awaiting your first real publish.**
+**M4 B3 — "Continue development": implemented on `feat/m4-b3-continue-development`, awaiting your first real use.**
+B1 and B2 are merged to `main` (PR #1); the first real draft PR was opened and merged on
+`1_64_modelcollector`.
 Plans: [M3](plans/M3-vault-connections.md) · [M2](plans/M2-projects-tasks-admin.md).
 
 | Milestone                                         | Status                                                 |
@@ -12,7 +14,42 @@ Plans: [M3](plans/M3-vault-connections.md) · [M2](plans/M2-projects-tasks-admin
 | M3 — Credential Vault, Connections (CLI after M4) | ✅ Implemented, awaiting approval                      |
 | M4–M7                                             | Not started                                            |
 
-Nothing is committed yet. The user asked to hold commits for now.
+## Completed — M4 B3 (Continue development)
+
+- [x] **Continue development** card on the project page: one click picks the project's next task
+      and starts a run. One click runs one task.
+- [x] **Which task:** _Changes requested_ first (finish what is under review), then _Backlog_, each
+      by priority (urgent → low), then by number. A task is skipped while a dependency isn't Done;
+      dependencies on cancelled tasks are ignored. Planning and hand-moved In progress tasks are
+      left alone.
+- [x] **Stops at Ready for QA (user decision 2026-11-10: "wait for my review"):** nothing new starts
+      while any task is Ready for QA, a run is active, or a task is Blocked. The card always says
+      why, with a link to the task:
+  - `ready`: "Next up: #5 Add login page"
+  - `running`: "Working on #5 …" (after 2 min in the queue: "Is the worker running?")
+  - `waiting_for_qa`: "Waiting for your review: #4 …"
+  - `blocked`: "#6 … is blocked: Run #2 failed: …" (run it again, or move it to Backlog/Cancelled)
+  - `waiting_on_dependencies`: "#7 … is waiting on #4 (in progress)"
+  - `not_ready`: the same reasons as the task's Run button (repository, clone, checks, Claude Code,
+    worker)
+  - `queue_empty`, `archived`
+- [x] For a task with requested changes, the reviewer's reason is passed to the agent as the run
+      note (the same as typing it on the task page).
+- [x] API: `GET /api/v1/projects/:project/continue` (status) and `POST …/continue` (start; 202 with
+      the task and run, or 409 `CANNOT_CONTINUE` with the reason). Audited as `project.continued`.
+- [x] Code: `pickNextTask` in `#core` (pure), `ContinueService` in `#services`, `ContinueCard` in
+      the dashboard.
+
+Verification (2026-11-10): `pnpm lint`, `pnpm typecheck`, all test projects (37 files, **405
+tests**), `pnpm build`, `prettier --check` all pass. New tests:
+
+- `packages/core/test/continuation.test.ts`: ordering, dependencies, waiting, empty
+- `packages/services/test/continue.int.test.ts`: real DB, git server and stand-in agent: not ready →
+  ready → start → running (and stale queue) → Ready for QA stops → changes requested first, with the
+  reason as the note → blocked → waiting on dependencies → empty → archived
+- `apps/api/test/runs.int.test.ts`: status JSON, 409 `CANNOT_CONTINUE`, OpenAPI route
+- `apps/web/test/continue.test.tsx`: the card starts the next task; disabled with the reason while
+  waiting for review
 
 ## Completed — M4 B2 (checks, push, draft PR)
 
@@ -349,8 +386,9 @@ Tests covering the acceptance criteria:
 
 - **You:**
   1. start `pnpm dev`
-  2. open `1-64-model-collector` → **Checks** → _Detect from repository_ → confirm
-  3. on task #2, click **Publish and open draft pull request**
-  4. review the PR on GitHub
-- **Then:** merge this branch after your OK, and **B3**: "Continue development" (next eligible
-  task, stop at Ready for QA).
+  2. open `1-64-model-collector`; create two or three small tasks with different priorities
+  3. the **Continue development** card shows "Next up: …"; click it
+  4. when the task is Ready for QA, the card says "Waiting for your review"; review the draft PR,
+     then move the task to Done (or Changes requested, and click Continue again)
+- **Then:** merge `feat/m4-b3-continue-development` after your OK. That completes M4; M5 needs your
+  approval.

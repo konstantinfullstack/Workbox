@@ -110,6 +110,37 @@ describe('runs API', () => {
     expect(publish.json()).toMatchObject({ error: { code: 'NOTHING_TO_PUBLISH' } });
   });
 
+  it('explains why "Continue development" cannot start and refuses with 409 CANNOT_CONTINUE', async () => {
+    await app.inject({ method: 'POST', url: '/api/v1/projects', payload: { name: 'Autopilot' } });
+    expect(
+      (await app.inject({ method: 'GET', url: '/api/v1/projects/autopilot/continue' })).json(),
+    ).toEqual({
+      canStart: false,
+      reason: 'queue_empty',
+      message: 'Nothing left to do: no tasks in Backlog or Changes requested.',
+      task: null,
+      details: [],
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/projects/autopilot/tasks',
+      payload: { title: 'First' },
+    });
+    const status = (
+      await app.inject({ method: 'GET', url: '/api/v1/projects/autopilot/continue' })
+    ).json();
+    expect(status).toMatchObject({
+      reason: 'not_ready',
+      task: { number: 1, title: 'First' },
+      details: ['Link a repository to this project first.'],
+    });
+    const start = await app.inject({ method: 'POST', url: '/api/v1/projects/autopilot/continue' });
+    expect(start.statusCode).toBe(409);
+    expect(start.json()).toMatchObject({
+      error: { code: 'CANNOT_CONTINUE', details: { reason: 'not_ready' } },
+    });
+  });
+
   it('documents the run routes', async () => {
     const spec = (await app.inject({ method: 'GET', url: '/docs/json' })).json<{
       paths: Record<string, unknown>;
@@ -125,6 +156,7 @@ describe('runs API', () => {
         '/api/v1/projects/{project}/checks/detect',
         '/api/v1/tasks/{taskId}/git',
         '/api/v1/tasks/{taskId}/publish',
+        '/api/v1/projects/{project}/continue',
       ]),
     );
   });

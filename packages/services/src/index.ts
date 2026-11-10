@@ -3,6 +3,7 @@ import { createCodeHostRegistry, type CodeHostRegistry } from '#integrations';
 import type { Keyring } from '#vault';
 import { AgentRuntimeService, type WorkerGateway } from './agent-runtime-service.js';
 import { ConnectionService } from './connection-service.js';
+import { ContinueService } from './continue-service.js';
 import { ProjectChecksService } from './project-checks-service.js';
 import { ProjectService } from './project-service.js';
 import { RepositoryService } from './repository-service.js';
@@ -12,6 +13,7 @@ import { TaskService } from './task-service.js';
 
 export { AgentRuntimeService, type WorkerGateway } from './agent-runtime-service.js';
 export { ConnectionService, credentialContext } from './connection-service.js';
+export { ContinueService } from './continue-service.js';
 export type { ActionContext } from './context.js';
 export { projectChecks, ProjectChecksService } from './project-checks-service.js';
 export { ProjectService } from './project-service.js';
@@ -39,6 +41,7 @@ export interface Services {
   runs: RunService;
   checks: ProjectChecksService;
   git: TaskGitService;
+  continuation: ContinueService;
 }
 
 export interface ServiceDeps {
@@ -57,14 +60,16 @@ export function createServices(deps: ServiceDeps): Services {
     codeHosts,
     ...(deps.now ? { now: deps.now } : {}),
   });
+  const runs = new RunService(deps.db, deps.workerGateway);
   return {
     projects: new ProjectService(deps.db),
     tasks: new TaskService(deps.db),
     connections,
     repositories: new RepositoryService(deps.db, codeHosts, connections, deps.workerGateway),
     agentRuntimes: new AgentRuntimeService(deps.db, deps.workerGateway),
-    runs: new RunService(deps.db, deps.workerGateway),
+    runs,
     checks: new ProjectChecksService(deps.db, codeHosts, connections),
     git: new TaskGitService(deps.db, codeHosts, connections, deps.workerGateway),
+    continuation: new ContinueService(deps.db, runs, deps.now),
   };
 }

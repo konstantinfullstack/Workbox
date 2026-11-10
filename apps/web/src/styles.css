@@ -842,3 +842,22 @@ button[aria-pressed='true'] {
   background: #fff1c9;
   color: #7a5300;
 }
+
+/* --- M4 B3: continue development ------------------------------------------------------- */
+.continue {
+  border-left: 4px solid var(--border);
+}
+.continue.continue-ready {
+  border-left-color: var(--accent);
+}
+.continue.continue-running {
+  border-left-color: #2f9e6a;
+}
+.continue.continue-waiting,
+.continue.continue-stopped {
+  border-left-color: #c98a00;
+}
+.continue-message {
+  font-weight: 500;
+  margin: 0 0 0.5rem;
+}

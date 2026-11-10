@@ -19,6 +19,7 @@ export const ERROR_CODES = {
   workerUnavailable: 'WORKER_UNAVAILABLE',
   runActive: 'RUN_ALREADY_ACTIVE',
   taskNotRunnable: 'TASK_NOT_RUNNABLE',
+  cannotContinue: 'CANNOT_CONTINUE',
   runNotActive: 'RUN_NOT_ACTIVE',
   nothingToPublish: 'NOTHING_TO_PUBLISH',
   internal: 'INTERNAL_ERROR',

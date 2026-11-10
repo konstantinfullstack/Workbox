@@ -8,6 +8,7 @@ import {
   useUpdateProject,
 } from '../api/hooks.js';
 import { ChecksCard } from '../components/ChecksCard.js';
+import { ContinueCard } from '../components/ContinueCard.js';
 import { RepositoryCard } from '../components/connections/RepositoryCard.js';
 import { ProjectForm } from '../components/ProjectForm.js';
 import { ErrorBanner, LastUpdated, Loading } from '../components/Status.js';
@@ -109,6 +110,7 @@ export function ProjectPage() {
           <strong>Project created, but the repository was not linked.</strong> {linkError}
         </div>
       )}
+      <ContinueCard project={p} />
       <RepositoryCard project={p} />
       <ChecksCard project={p} />
 

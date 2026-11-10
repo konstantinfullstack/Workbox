@@ -2,7 +2,7 @@
 
 - **Status:**
   - Phase A: implemented, and verified with the user's repository (2026-11-05).
-  - Phases B–D: **approved 2026-11-05**. B1 and B2 implemented; B3 next.
+  - Phases B–D: **approved 2026-11-05**. B1, B2 and B3 implemented.
   - Commit name: "Konstantin Karnaukh", with the account's no-reply email.
   - **Revision 2026-11-10 (user, option A):** no per-task worktree folders. There is one normal
     working copy per project at `workspaces/<slug>/`, switched to the task branch; each successful
@@ -193,6 +193,8 @@ Your review: Approve → done (you merge on GitHub/GitLab)
   blocked, run failed, waiting for your QA, worker offline, cancelled.
 - Requires a verified repository, a ready workspace and Claude Code ready. Otherwise the button is
   disabled and says why.
+- **Decided 2026-11-10 (user):** nothing new starts while any task is Ready for QA ("wait for my
+  review"); requested changes run before new backlog work; one click runs one task.
 
 ### Security notes (isolation level a)
 
