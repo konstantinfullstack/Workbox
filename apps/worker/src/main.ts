@@ -13,11 +13,12 @@ import { createDatabase } from '#database';
 import { assertWorkspacesRoot } from '#git';
 import { createCodeHostRegistry } from '#integrations';
 import { createAgentRegistry } from '#agents';
-import { ConnectionService, Publisher, RunExecutor, WorkspaceSyncer } from '#services';
+import { ConnectionService, Publisher, ReviewSync, RunExecutor, WorkspaceSyncer } from '#services';
 import { QUEUE_NAMES } from '#shared';
 import { Keyring, VaultKeyError } from '#vault';
 import { Queue } from 'bullmq';
 import { createSystemWorker } from './worker.js';
+import { startReviewSyncLoop } from './review-sync-loop.js';
 import { createRunWorker, enqueueRuns } from './run-worker.js';
 import { createWorkspaceWorker, enqueuePendingSyncs } from './workspace-worker.js';
 
@@ -107,6 +108,11 @@ async function main(): Promise<void> {
     },
     'worker ready',
   );
+  const stopReviewSync = startReviewSyncLoop({
+    reviews: new ReviewSync({ db: database.db, codeHosts, connections }),
+    root,
+    logger: child,
+  });
 
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals) => {
@@ -119,6 +125,7 @@ async function main(): Promise<void> {
     }, 30_000);
     forceExit.unref();
     Promise.all([
+      stopReviewSync(),
       systemWorker.close(),
       workspaceWorker.close(),
       runWorker.close(), // waits for an active run; the force-exit timer bounds this

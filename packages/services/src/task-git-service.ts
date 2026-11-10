@@ -1,20 +1,14 @@
 import { DomainError } from '#core';
-import {
-  connections,
-  gitReferences,
-  projectRepositories,
-  taskRuns,
-  tasks,
-  type Database,
-} from '#database';
+import { gitReferences, taskRuns, tasks, type Database } from '#database';
 import type { CodeHostRegistry } from '#integrations';
 import { ERROR_CODES, type GitReference } from '#shared';
-import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import type { WorkerGateway } from './agent-runtime-service.js';
 import { recordAudit } from './audit.js';
 import type { ConnectionService } from './connection-service.js';
 import type { ActionContext } from './context.js';
 import { toGitReference } from './publisher.js';
+import { ReviewSync } from './review-sync.js';
 
 /** Refresh the PR state from the code host at most this often when the task is viewed. */
 const REFRESH_AFTER_MS = 60_000;
@@ -37,9 +31,13 @@ export class TaskGitService {
     private readonly codeHosts: CodeHostRegistry,
     private readonly connectionService: ConnectionService,
     private readonly gateway?: WorkerGateway,
-  ) {}
+  ) {
+    this.reviews = new ReviewSync({ db, codeHosts, connections: connectionService });
+  }
 
-  async get(taskId: string, context: ActionContext): Promise<TaskGitInfo> {
+  private readonly reviews: ReviewSync;
+
+  async get(taskId: string): Promise<TaskGitInfo> {
     const [task] = await this.db
       .select({ id: tasks.id })
       .from(tasks)
@@ -67,7 +65,7 @@ export class TaskGitService {
       ref?.reviewNumber &&
       (!ref.lastSyncedAt || Date.now() - ref.lastSyncedAt.getTime() > REFRESH_AFTER_MS)
     ) {
-      ref = (await this.refresh(ref.id, context)) ?? ref;
+      ref = (await this.refresh(ref.id)) ?? ref;
     }
     return {
       branch: ref?.branch ?? run?.branch ?? null,
@@ -104,39 +102,10 @@ export class TaskGitService {
     });
   }
 
-  private async refresh(referenceId: string, context: ActionContext) {
-    const [row] = await this.db
-      .select({ ref: gitReferences, repo: projectRepositories, baseUrl: connections.baseUrl })
-      .from(gitReferences)
-      .innerJoin(projectRepositories, eq(projectRepositories.projectId, gitReferences.projectId))
-      .innerJoin(connections, eq(connections.id, projectRepositories.connectionId))
-      .where(eq(gitReferences.id, referenceId))
-      .limit(1);
-    if (!row?.ref.reviewNumber) return undefined;
+  /** Syncs the PR state and applies it to the task (merged → Done, closed → Changes requested). */
+  private async refresh(referenceId: string) {
     try {
-      const review = await this.connectionService.withToken(
-        row.repo.connectionId,
-        'review.status',
-        context,
-        (token) =>
-          this.codeHosts[row.repo.provider].getReviewRequest(
-            { baseUrl: row.baseUrl },
-            token,
-            { externalId: row.repo.externalId, fullPath: row.repo.fullPath },
-            row.ref.reviewNumber!,
-          ),
-      );
-      const [updated] = await this.db
-        .update(gitReferences)
-        .set({
-          reviewState: review.state,
-          reviewUrl: review.url,
-          lastSyncedAt: new Date(),
-          updatedAt: sql`now()`,
-        })
-        .where(eq(gitReferences.id, referenceId))
-        .returning();
-      return updated;
+      return (await this.reviews.sync(referenceId))?.reference;
     } catch {
       return undefined; // showing slightly stale state is better than failing the page
     }

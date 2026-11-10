@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { ClaudeCodeAdapter } from '#agents';
 import { DomainError } from '#core';
 import { createDatabase, type DatabaseHandle } from '#database';
-import { runGit } from '#git';
-import { createCodeHostRegistry } from '#integrations';
+import { deleteMergedTaskBranch, runGit } from '#git';
+import { createCodeHostRegistry, type CodeHostRegistry } from '#integrations';
 import { LOCAL_USER_ACTOR } from '#shared';
 import { generateMasterKey, Keyring, Secret } from '#vault';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -15,6 +15,8 @@ import { createMigratedTestDatabase, type TestDatabase } from '../../../test/sup
 import {
   createServices,
   Publisher,
+  REVIEW_SYNC_ACTOR,
+  ReviewSync,
   RunExecutor,
   WorkspaceSyncer,
   type Services,
@@ -32,6 +34,7 @@ let services: Services;
 let syncer: WorkspaceSyncer;
 let publisher: Publisher;
 let project: { id: string; slug: string };
+let codeHosts: CodeHostRegistry;
 
 function executor(name: string, body: string): RunExecutor {
   const path = join(scripts, name);
@@ -87,7 +90,7 @@ beforeAll(async () => {
   });
   root = mkdtempSync(join(tmpdir(), 'workbox-pub-ws-'));
   scripts = mkdtempSync(join(tmpdir(), 'workbox-pub-agents-'));
-  const codeHosts = createCodeHostRegistry({ timeoutMs: 3_000 });
+  codeHosts = createCodeHostRegistry({ timeoutMs: 3_000 });
   services = createServices({
     db: handle.db,
     keyring: Keyring.fromConfig({ currentKey: generateMasterKey() }),
@@ -195,7 +198,7 @@ describe('a run that passes its checks', () => {
     expect(github.reviewRequests[0]!.body).toContain('Wrote STATUS.');
     expect(github.reviewRequests[0]!.body).toContain('✅ `grep -qx pass STATUS`');
 
-    const info = await services.git.get(task.id, ctx);
+    const info = await services.git.get(task.id);
     expect(info).toMatchObject({
       branch,
       localCommitSha: finished.commitSha,
@@ -225,7 +228,7 @@ describe('a run that passes its checks', () => {
     ).toBe('completed');
     expect(github.reviewRequests).toHaveLength(1);
     expect(github.reviewRequests[0]!.body).toContain('Added docs.');
-    expect((await services.git.get(task.id, ctx)).reference?.pushedSha).toBe(
+    expect((await services.git.get(task.id)).reference?.pushedSha).toBe(
       (await services.runs.get(rerun.id)).commitSha,
     );
   });
@@ -283,7 +286,7 @@ describe('publishing problems and manual publish', () => {
     expect(await executor('noperm', write('STATUS', 'pass\n') + done('ok')).execute(run.id)).toBe(
       'completed',
     );
-    const info = await services.git.get(task.id, ctx);
+    const info = await services.git.get(task.id);
     expect(info.reference).toMatchObject({
       reviewNumber: null,
       lastError: expect.stringMatching(/Pull requests: write/),
@@ -355,6 +358,91 @@ describe('publishing problems and manual publish', () => {
     await handle.pool.query(
       "UPDATE git_references SET last_synced_at = now() - interval '5 minutes'",
     );
-    expect((await services.git.get(task.id, ctx)).reference?.reviewState).toBe('merged');
+    expect((await services.git.get(task.id)).reference?.reviewState).toBe('merged');
+  });
+});
+
+describe('pull request sync', () => {
+  const localBranch = (branch: string) =>
+    runGit(['-C', join(root, project.slug), 'show-ref', '--verify', `refs/heads/${branch}`]).then(
+      () => true,
+      () => false,
+    );
+  const cleanup = (input: { projectSlug: string; branch: string; pushedSha: string }) =>
+    deleteMergedTaskBranch({ path: join(root, input.projectSlug), ...input });
+
+  async function publishedTask(title: string) {
+    const task = await services.tasks.create(project.id, { title }, ctx);
+    const run = await services.runs.start(task.id, {}, ctx);
+    expect(
+      await executor(`sync-${task.number}`, write('STATUS', 'pass\n') + done(title)).execute(
+        run.id,
+      ),
+    ).toBe('completed');
+    expect((await services.tasks.get(task.id)).state).toBe('ready_for_qa');
+    const pr = github.reviewRequests.find((r) => r.title === title)!;
+    return {
+      task,
+      pr,
+      branch: `workbox/${task.number}-${title.toLowerCase().replaceAll(' ', '-')}`,
+    };
+  }
+
+  it('moves the task to Done when its pull request is merged, then removes the local branch', async () => {
+    const reviews = new ReviewSync({ db: handle.db, codeHosts, connections: services.connections });
+    const { task, pr, branch } = await publishedTask('Merge me');
+    expect(await reviews.syncPending()).toMatchObject({ moved: 0 }); // still open: nothing to do
+
+    pr.state = 'merged';
+    expect((await reviews.syncPending()).moved).toBeGreaterThanOrEqual(1);
+    expect((await services.tasks.get(task.id)).state).toBe('done');
+    expect((await services.tasks.history(task.id)).at(-1)).toMatchObject({
+      toState: 'done',
+      actor: REVIEW_SYNC_ACTOR,
+      reason: `Pull request #${pr.number} was merged on GitHub`,
+    });
+    expect((await reviews.syncPending()).moved).toBe(0); // idempotent
+
+    expect(await localBranch(branch)).toBe(true);
+    expect(await reviews.cleanupMergedBranches(cleanup)).toBeGreaterThanOrEqual(1);
+    expect(await localBranch(branch)).toBe(false);
+    expect(await reviews.cleanupMergedBranches(cleanup)).toBe(0); // marked done, not retried
+  });
+
+  it('never deletes a branch with commits that were not pushed', async () => {
+    const path = join(root, project.slug);
+    await runGit(['-C', path, 'branch', 'workbox/999-local-only']);
+    expect(
+      await deleteMergedTaskBranch({
+        path,
+        branch: 'workbox/999-local-only',
+        pushedSha: 'f'.repeat(40),
+      }),
+    ).toBe('kept');
+    expect(await deleteMergedTaskBranch({ path, branch: 'main', pushedSha: 'x' })).toBe('kept');
+    expect(await localBranch('workbox/999-local-only')).toBe(true);
+  });
+
+  it('moves the task to Changes requested when its pull request is closed, and Continue waits for you', async () => {
+    const { task, pr } = await publishedTask('Close me');
+    pr.state = 'closed';
+    // Viewing the task syncs it too (the API path).
+    await handle.pool.query(
+      "UPDATE git_references SET last_synced_at = now() - interval '5 minutes'",
+    );
+    expect((await services.git.get(task.id)).reference?.reviewState).toBe('closed');
+    expect((await services.tasks.get(task.id)).state).toBe('changes_requested');
+    expect((await services.tasks.history(task.id)).at(-1)?.reason).toBe(
+      `Pull request #${pr.number} was closed without merging on GitHub`,
+    );
+
+    // Earlier tests left tasks in review or blocked, which would stop Continue first.
+    const others = await services.tasks.list(project.id, { limit: 50, offset: 0 });
+    for (const other of others.items.filter((t) => ['ready_for_qa', 'blocked'].includes(t.state))) {
+      await services.tasks.transition(other.id, { to: 'cancelled', reason: 'test cleanup' }, ctx);
+    }
+    const status = await services.continuation.status(project.slug);
+    expect(status).toMatchObject({ canStart: false, reason: 'blocked', task: { id: task.id } });
+    expect(status.message).toMatch(/closed without merging/);
   });
 });

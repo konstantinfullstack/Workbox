@@ -21,6 +21,12 @@ export { Publisher, pullRequestBody, type PublishResult } from './publisher.js';
 export { runChecks } from './checks-runner.js';
 export { TaskGitService, type TaskGitInfo } from './task-git-service.js';
 export { RepositoryService } from './repository-service.js';
+export {
+  REVIEW_SYNC_ACTOR,
+  ReviewSync,
+  type CleanupBranch,
+  type ReviewSyncOptions,
+} from './review-sync.js';
 export { RunExecutor, type RunExecutorOptions } from './run-executor.js';
 export { RUNNABLE_TASK_STATES, RunService } from './run-service.js';
 export { transitionTaskInTx } from './task-service.js';

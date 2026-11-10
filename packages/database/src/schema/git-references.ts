@@ -34,6 +34,8 @@ export const gitReferences = pgTable(
     reviewState: text('review_state').$type<ReviewRequestState>(),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
     lastError: text('last_error'),
+    /** When the merged task branch was removed from the local working copy (or found gone). */
+    localBranchRemovedAt: timestamp('local_branch_removed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

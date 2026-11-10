@@ -57,6 +57,13 @@
       "when": 1794337726362,
       "tag": "0007_checks_and_git_references",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794347118391,
+      "tag": "0008_git_reference_branch_cleanup",
+      "breakpoints": true
     }
   ]
 }
