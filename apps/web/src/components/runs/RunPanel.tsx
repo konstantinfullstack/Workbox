@@ -1,7 +1,8 @@
-import type { RunEvent, Task, TaskRun } from '#shared';
+import type { RunArtifact, RunEvent, Task, TaskRun } from '#shared';
 import { useEffect, useRef, useState } from 'react';
 import {
   useRunActions,
+  useRunArtifacts,
   useRunDiff,
   useRunEvents,
   useRunReadiness,
@@ -237,6 +238,7 @@ function RunView({
               )}
             </>
           )}
+          <RunFiles runId={run.id} active={active} />
           <h3>Timeline</h3>
           {events.isPending ? (
             <Loading what="timeline" />
@@ -297,5 +299,49 @@ export function DiffView({ diff, truncated }: { diff: string; truncated: boolean
         ))}
       </pre>
     </div>
+  );
+}
+
+const KIND_LABEL: Record<RunArtifact['kind'], string> = {
+  transcript: 'Agent transcript',
+  check_output: 'Check output',
+  patch: 'Patch',
+};
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** Full files saved for the run (M5): view in the browser or download, until they expire. */
+function RunFiles({ runId, active }: { runId: string; active: boolean }) {
+  const files = useRunArtifacts(runId, active);
+  if (!files.data || files.data.length === 0) return null;
+  const expires = new Date(
+    Math.min(...files.data.map((f) => new Date(f.expiresAt).getTime())),
+  ).toLocaleDateString();
+  return (
+    <>
+      <h3>Saved files</h3>
+      <ul className="run-files" aria-label="Saved files">
+        {files.data.map((file) => {
+          const url = `/api/v1/runs/${runId}/artifacts/${file.id}`;
+          return (
+            <li key={file.id}>
+              <span className="muted small">{KIND_LABEL[file.kind]}</span>{' '}
+              <a href={url} target="_blank" rel="noreferrer" className="mono">
+                {file.name}
+              </a>{' '}
+              <span className="muted small">({formatSize(file.sizeBytes)})</span>{' '}
+              <a href={`${url}?download=1`} className="small" aria-label={`Download ${file.name}`}>
+                Download
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="muted small">Kept until {expires}, then deleted automatically.</p>
+    </>
   );
 }

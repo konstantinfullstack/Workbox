@@ -2,8 +2,8 @@
 
 ## Current milestone
 
-**M5 — Git workflow and verification: step 1 (tasks follow their pull request) implemented on
-`feat/m5-pr-sync`.** Plan: [M5](plans/M5-git-verification.md). M4 is complete (PR #1, #2 merged).
+**M5 — Git workflow and verification: step 2 (run files) implemented on `feat/m5-run-artifacts`
+(built on step 1, PR #3).** Plan: [M5](plans/M5-git-verification.md).
 
 | Milestone                                         | Status                                                 |
 | ------------------------------------------------- | ------------------------------------------------------ |
@@ -11,6 +11,27 @@
 | M2 — Projects, Tasks, Minimal Admin               | ✅ Done; user checked CRUD in the dashboard 2026-11-04 |
 | M3 — Credential Vault, Connections (CLI after M4) | ✅ Implemented, awaiting approval                      |
 | M4–M7                                             | Not started                                            |
+
+## Completed — M5 step 2 (run files, kept 7 days)
+
+- [x] Each run saves, under `<workbox>/artifacts/<runId>/` (git-ignored, owner-only files):
+  - `agent-transcript.jsonl`: the agent's raw output for every pass (provider-agnostic: the
+    contract's `transcriptPath`; each adapter writes its native format)
+  - `checks/<pass>-<step>-<name>.log`: complete check output (the run still stores the last
+    16 KB for the timeline)
+  - `branch.patch`: the branch's commits (`git format-patch`), never truncated
+- [x] **Saved files** on each run: view in the browser (always plain text, `nosniff`, no scripts)
+      or download; "Kept until <date>".
+- [x] Deleted after `WORKBOX_ARTIFACT_RETENTION_DAYS` (default **7**): files, rows and empty
+      folders, by the worker every hour. Migration `0009` adds `run_artifacts`.
+- [x] The worker refuses an artifacts folder inside the repository that isn't git-ignored.
+- [x] Saving files never fails a run: problems show as a warning on the timeline.
+
+Verification: lint, typecheck, prettier, build, no schema drift; all tests pass (39 files, **415
+tests**). New: a real run with a retry saves both check passes, the transcript (with stderr) and an
+applicable patch, then everything is purged after 7 days; path escapes are refused; the API serves
+files as plain text with safe headers and only under their own run; the dashboard lists them.
+Migration `0009` applied to the dev database.
 
 ## Completed — M5 step 1 (tasks follow their pull request)
 
@@ -400,6 +421,6 @@ Tests covering the acceptance criteria:
 
 ## Next action
 
-- **You:** start `pnpm dev`; merge (or close) a Workbox draft PR on GitHub; within 3 minutes, or as
-  soon as you open the task, it moves to Done (or Changes requested).
-- **Then:** M5 step 2, run artifacts (kept 7 days).
+- **You:** run a task (e.g. with **Continue development**), open it, expand the run and look at
+  **Saved files**: open the transcript and a check log, download the patch.
+- **Then:** M5 step 3, links and check summaries.

@@ -186,19 +186,22 @@ async function sizeKb(path: string): Promise<number> {
  * Validates the workspaces root. Cloned repositories must never end up committed to the Workbox
  * repository: a root inside `projectRoot` is accepted only if git confirms it is ignored there.
  */
-export async function assertWorkspacesRoot(root: string, projectRoot: string): Promise<void> {
-  if (!isAbsolute(root)) throw new Error('WORKBOX_WORKSPACES_DIR must be an absolute path');
+export async function assertWorkspacesRoot(
+  root: string,
+  projectRoot: string,
+  setting = 'WORKBOX_WORKSPACES_DIR',
+): Promise<void> {
+  if (!isAbsolute(root)) throw new Error(`${setting} must be an absolute path`);
   const rel = relative(resolve(projectRoot), resolve(root));
   const inside = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
   if (!inside) return;
-  if (rel === '')
-    throw new Error('WORKBOX_WORKSPACES_DIR must not be the Workbox repository itself');
+  if (rel === '') throw new Error(`${setting} must not be the Workbox repository itself`);
   try {
     await runGit(['-C', projectRoot, 'check-ignore', '--quiet', `${rel}/`]);
   } catch {
     throw new Error(
-      `WORKBOX_WORKSPACES_DIR (${root}) is inside the Workbox repository but not git-ignored; ` +
-        'cloned code could be committed. Use the default (workspaces/, already git-ignored) or add it to .gitignore.',
+      `${setting} (${root}) is inside the Workbox repository but not git-ignored; ` +
+        'its files could be committed. Use the default (already git-ignored) or add it to .gitignore.',
     );
   }
 }

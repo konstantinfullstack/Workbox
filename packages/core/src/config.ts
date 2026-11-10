@@ -52,6 +52,18 @@ const baseConfigSchema = z.object({
   LOG_LEVEL: logLevelSchema.default('info'),
 });
 
+/** Saved files of each run (agent transcript, full check output, patch). */
+const artifactsConfigShape = {
+  /** Default: `artifacts/` inside the Workbox project folder (git-ignored). */
+  WORKBOX_ARTIFACTS_DIR: z
+    .string()
+    .min(1)
+    .optional()
+    .transform((value) => expandHome(value ?? 'artifacts')),
+  /** Run files are deleted this many days after the run. */
+  WORKBOX_ARTIFACT_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(7),
+};
+
 export const apiConfigSchema = baseConfigSchema.extend({
   API_HOST: z.string().min(1).default('127.0.0.1'),
   API_PORT: portSchema.default(3000),
@@ -68,6 +80,7 @@ export const apiConfigSchema = baseConfigSchema.extend({
   ...databaseConfigShape,
   ...redisConfigShape,
   ...vaultConfigShape,
+  ...artifactsConfigShape,
 });
 export type ApiConfig = z.infer<typeof apiConfigSchema>;
 
@@ -92,6 +105,7 @@ export const workerConfigSchema = baseConfigSchema.extend({
   ...redisConfigShape,
   ...databaseConfigShape,
   ...vaultConfigShape,
+  ...artifactsConfigShape,
 });
 export type WorkerConfig = z.infer<typeof workerConfigSchema>;
 

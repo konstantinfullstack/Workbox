@@ -13,11 +13,19 @@ import { createDatabase } from '#database';
 import { assertWorkspacesRoot } from '#git';
 import { createCodeHostRegistry } from '#integrations';
 import { createAgentRegistry } from '#agents';
-import { ConnectionService, Publisher, ReviewSync, RunExecutor, WorkspaceSyncer } from '#services';
+import {
+  ArtifactStore,
+  ConnectionService,
+  Publisher,
+  ReviewSync,
+  RunExecutor,
+  WorkspaceSyncer,
+} from '#services';
 import { QUEUE_NAMES } from '#shared';
 import { Keyring, VaultKeyError } from '#vault';
 import { Queue } from 'bullmq';
 import { createSystemWorker } from './worker.js';
+import { startArtifactPurge } from './artifact-purge.js';
 import { startReviewSyncLoop } from './review-sync-loop.js';
 import { createRunWorker, enqueueRuns } from './run-worker.js';
 import { createWorkspaceWorker, enqueuePendingSyncs } from './workspace-worker.js';
@@ -33,6 +41,8 @@ async function main(): Promise<void> {
   const root = config.WORKBOX_WORKSPACES_DIR;
   // Cloned code must never be committed to the Workbox repo by accident.
   await assertWorkspacesRoot(root, PROJECT_ROOT);
+  // Same for run files (agent transcripts can quote the repository's code).
+  await assertWorkspacesRoot(config.WORKBOX_ARTIFACTS_DIR, PROJECT_ROOT, 'WORKBOX_ARTIFACTS_DIR');
 
   const keyring = Keyring.fromConfig({
     currentKey: config.WORKBOX_MASTER_KEY,
@@ -50,6 +60,11 @@ async function main(): Promise<void> {
   const connections = new ConnectionService({ db: database.db, keyring, codeHosts });
   const publisher = new Publisher(database.db, codeHosts, connections);
   const syncer = new WorkspaceSyncer({ db: database.db, connections, root, workerId });
+  const artifacts = new ArtifactStore(
+    database.db,
+    config.WORKBOX_ARTIFACTS_DIR,
+    config.WORKBOX_ARTIFACT_RETENTION_DAYS,
+  );
   const executor = new RunExecutor({
     db: database.db,
     agents: createAgentRegistry({
@@ -60,6 +75,7 @@ async function main(): Promise<void> {
     timeoutMs: config.WORKBOX_RUN_TIMEOUT_MINUTES * 60_000,
     connections,
     publisher,
+    artifacts,
     ...(config.WORKBOX_GIT_AUTHOR_NAME ? { authorName: config.WORKBOX_GIT_AUTHOR_NAME } : {}),
   });
 
@@ -113,6 +129,7 @@ async function main(): Promise<void> {
     root,
     logger: child,
   });
+  const stopArtifactPurge = startArtifactPurge({ store: artifacts, logger: child });
 
   let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals) => {
@@ -126,6 +143,7 @@ async function main(): Promise<void> {
     forceExit.unref();
     Promise.all([
       stopReviewSync(),
+      stopArtifactPurge(),
       systemWorker.close(),
       workspaceWorker.close(),
       runWorker.close(), // waits for an active run; the force-exit timer bounds this

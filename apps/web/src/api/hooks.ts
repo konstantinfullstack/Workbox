@@ -31,6 +31,7 @@ export const keys = {
   runReadiness: (taskId: string) => ['run-readiness', taskId] as const,
   runEvents: (runId: string) => ['run-events', runId] as const,
   runDiff: (runId: string) => ['run-diff', runId] as const,
+  runArtifacts: (runId: string) => ['run-artifacts', runId] as const,
   checks: (project: string) => ['checks', project] as const,
   taskGit: (taskId: string) => ['task-git', taskId] as const,
   continueStatus: (project: string) => ['continue', project] as const,
@@ -245,6 +246,15 @@ export const useRunDiff = (runId: string, enabled: boolean) =>
     queryFn: () => api.runDiff(runId),
     enabled: enabled && runId !== '',
     staleTime: Infinity,
+  });
+
+/** The run's saved files; refreshed while the run is active (files appear as it goes). */
+export const useRunArtifacts = (runId: string, active: boolean) =>
+  useQuery({
+    queryKey: keys.runArtifacts(runId),
+    queryFn: () => api.runArtifacts(runId),
+    enabled: runId !== '',
+    refetchInterval: active ? 5_000 : false,
   });
 
 export function useRunActions(taskId: string) {
