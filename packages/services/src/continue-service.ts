@@ -1,10 +1,18 @@
 import { DomainError, pickNextTask } from '#core';
-import { taskDependencies, taskRuns, tasks, taskStateTransitions, type Database } from '#database';
+import {
+  gitReferences,
+  taskDependencies,
+  taskRuns,
+  tasks,
+  taskStateTransitions,
+  type Database,
+} from '#database';
 import {
   ACTIVE_RUN_STATES,
   ERROR_CODES,
   type ContinueStatus,
   type ContinueTaskRef,
+  type ReviewRequestState,
   type TaskRun,
   type TaskState,
 } from '#shared';
@@ -24,6 +32,7 @@ type TaskRow = {
   state: TaskState;
   priority: (typeof tasks.$inferSelect)['priority'];
   dependsOn: string[];
+  reviewState: ReviewRequestState | null;
 };
 
 /**
@@ -145,6 +154,19 @@ export class ContinueService {
       );
     }
 
+    // You closed its pull request: re-running it would open a new one, so that's your call.
+    const [abandoned] = rows.filter(
+      (task) => task.state === 'changes_requested' && task.reviewState === 'closed',
+    );
+    if (abandoned) {
+      return stop(
+        'blocked',
+        `${label(abandoned)}: its pull request was closed without merging.`,
+        refOf(abandoned),
+        ['Run it again from the task page (a new pull request is opened), or cancel the task.'],
+      );
+    }
+
     const pick = pickNextTask(rows);
     if (pick.kind === 'none') {
       return stop('queue_empty', 'Nothing left to do: no tasks in Backlog or Changes requested.');
@@ -194,8 +216,10 @@ export class ContinueService {
         title: tasks.title,
         state: tasks.state,
         priority: tasks.priority,
+        reviewState: gitReferences.reviewState,
       })
       .from(tasks)
+      .leftJoin(gitReferences, eq(gitReferences.taskId, tasks.id))
       .where(and(eq(tasks.projectId, projectId), ne(tasks.state, 'cancelled')))
       .orderBy(asc(tasks.number));
     const ids = rows.map((row) => row.id);

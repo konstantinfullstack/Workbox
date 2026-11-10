@@ -1,0 +1,1 @@
+ALTER TABLE "git_references" ADD COLUMN "local_branch_removed_at" timestamp with time zone;

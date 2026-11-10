@@ -83,7 +83,7 @@ export const gitRoutes: FastifyPluginAsyncZod<{ services: Services }> = async (
         response: { 200: taskGitSchema, ...errors },
       },
     },
-    async (request) => services.git.get(request.params.taskId, actionContext(request)),
+    async (request) => services.git.get(request.params.taskId),
   );
 
   app.post(

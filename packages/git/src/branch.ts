@@ -139,6 +139,43 @@ export async function returnToBaseBranch(path: string, baseBranch: string): Prom
   return true;
 }
 
+/**
+ * Deletes a task branch from the working copy after its pull request was merged. Only when it is
+ * safe: a `workbox/` branch that isn't checked out and whose tip is exactly what was pushed, so
+ * no unpublished work can be lost. `kept` means it wasn't safe (try again later or leave it).
+ */
+export async function deleteMergedTaskBranch(options: {
+  path: string;
+  branch: string;
+  pushedSha: string;
+}): Promise<'deleted' | 'missing' | 'kept'> {
+  const { path, branch, pushedSha } = options;
+  if (!branch.startsWith('workbox/')) return 'kept';
+  if ((await currentBranch(path)) === branch) return 'kept';
+  let tip: string;
+  try {
+    tip = (
+      await runGit([
+        '-C',
+        path,
+        'rev-parse',
+        '--verify',
+        '--quiet',
+        `refs/heads/${branch}^{commit}`,
+      ])
+    ).stdout.trim();
+  } catch {
+    return 'missing';
+  }
+  if (tip !== pushedSha) return 'kept'; // has commits that were never pushed
+  await runGit(['-C', path, 'branch', '--quiet', '-D', branch]);
+  // The remote-tracking ref is a local cache; drop it too so the next fetch doesn't resurrect it.
+  await runGit(['-C', path, 'update-ref', '-d', `refs/remotes/origin/${branch}`]).catch(
+    () => undefined,
+  );
+  return 'deleted';
+}
+
 async function localBranchExists(path: string, branch: string): Promise<boolean> {
   return runGit(['-C', path, 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).then(
     () => true,

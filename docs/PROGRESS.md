@@ -2,10 +2,8 @@
 
 ## Current milestone
 
-**M4 B3 — "Continue development": implemented on `feat/m4-b3-continue-development`, awaiting your first real use.**
-B1 and B2 are merged to `main` (PR #1); the first real draft PR was opened and merged on
-`1_64_modelcollector`.
-Plans: [M3](plans/M3-vault-connections.md) · [M2](plans/M2-projects-tasks-admin.md).
+**M5 — Git workflow and verification: step 1 (tasks follow their pull request) implemented on
+`feat/m5-pr-sync`.** Plan: [M5](plans/M5-git-verification.md). M4 is complete (PR #1, #2 merged).
 
 | Milestone                                         | Status                                                 |
 | ------------------------------------------------- | ------------------------------------------------------ |
@@ -13,6 +11,24 @@ Plans: [M3](plans/M3-vault-connections.md) · [M2](plans/M2-projects-tasks-admin
 | M2 — Projects, Tasks, Minimal Admin               | ✅ Done; user checked CRUD in the dashboard 2026-11-04 |
 | M3 — Credential Vault, Connections (CLI after M4) | ✅ Implemented, awaiting approval                      |
 | M4–M7                                             | Not started                                            |
+
+## Completed — M5 step 1 (tasks follow their pull request)
+
+- [x] `ReviewSync` (`#services`): fetches each open PR/MR's state through the code host adapter and
+      applies it to the task: merged → Done, closed without merging → Changes requested. Only
+      tasks in Ready for QA are moved; history actor `system:review-sync`.
+- [x] Worker loop every 3 minutes plus once at startup (`apps/worker/src/review-sync-loop.ts`);
+      the task page's refresh uses the same code, so opening a task is enough.
+- [x] Merged task branches are deleted from the working copy only when safe
+      (`deleteMergedTaskBranch` in `#git`: `workbox/` branch, not checked out, tip == pushed SHA).
+      Migration `0008` adds `git_references.local_branch_removed_at`.
+- [x] Continue development stops on a task whose PR was closed without merging, instead of
+      re-running it on its own.
+- [x] Real check on `1_64_modelcollector` (2026-11-10): task #1 (PR #3, merged) moved to Done;
+      both merged local branches were removed; the working copy is on `main`.
+
+Verification: lint, typecheck, prettier, build, no schema drift; all tests pass (38 files, **411
+tests**), including PR sync tests with the fake GitHub and real git server, and the worker loop.
 
 ## Completed — M4 B3 (Continue development)
 
@@ -384,11 +400,6 @@ Tests covering the acceptance criteria:
 
 ## Next action
 
-- **You:**
-  1. start `pnpm dev`
-  2. open `1-64-model-collector`; create two or three small tasks with different priorities
-  3. the **Continue development** card shows "Next up: …"; click it
-  4. when the task is Ready for QA, the card says "Waiting for your review"; review the draft PR,
-     then move the task to Done (or Changes requested, and click Continue again)
-- **Then:** merge `feat/m4-b3-continue-development` after your OK. That completes M4; M5 needs your
-  approval.
+- **You:** start `pnpm dev`; merge (or close) a Workbox draft PR on GitHub; within 3 minutes, or as
+  soon as you open the task, it moves to Done (or Changes requested).
+- **Then:** M5 step 2, run artifacts (kept 7 days).
