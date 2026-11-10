@@ -228,3 +228,23 @@ describe('instructions and report', () => {
     });
   });
 });
+
+describe('ClaudeCodeAdapter robustness', () => {
+  it('reports a CLI that exits before reading the instructions, without crashing (EPIPE)', async () => {
+    const command = fakeClaude('claude-exits-fast', `process.exit(2);`);
+    // Replace the header's stdin read: this script exits immediately.
+    writeFileSync(command, '#!/usr/bin/env node\nprocess.exit(2);\n');
+    chmodSync(command, 0o755);
+    const huge = 'instructions '.repeat(1_000_000);
+    for (let i = 0; i < 3; i++) {
+      const { result } = await run(
+        command,
+        task(mkdtempSync(join(dir, 'work-')), { instructions: huge }),
+      );
+      expect(result).toMatchObject({
+        status: 'failed',
+        failureReason: expect.stringMatching(/exited \(code 2\)/),
+      });
+    }
+  });
+});

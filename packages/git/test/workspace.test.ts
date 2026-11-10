@@ -351,3 +351,15 @@ describe('base branch handling', () => {
     expect((await runGit(['-C', path, 'rev-parse', 'HEAD'])).stdout.trim()).toBe(fix);
   });
 });
+
+describe('runGit robustness', () => {
+  it('does not crash when git exits before reading its stdin (EPIPE)', async () => {
+    // `git --version` never reads stdin; a large input makes the write race the exit.
+    const big = 'x'.repeat(8 * 1024 * 1024);
+    for (let i = 0; i < 5; i++) {
+      await expect(runGit(['--version'], { input: big })).resolves.toMatchObject({
+        stdout: expect.stringMatching(/^git version/),
+      });
+    }
+  });
+});

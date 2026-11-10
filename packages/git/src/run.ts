@@ -105,6 +105,9 @@ export async function runGit(
           );
         },
       );
+      // git may exit before reading stdin (e.g. a fast failure): a write to the closed pipe then
+      // fails with EPIPE, which must not become an uncaught exception that kills the process.
+      child.stdin?.on('error', () => undefined);
       child.stdin?.end(options.input ?? '');
     });
   } finally {
