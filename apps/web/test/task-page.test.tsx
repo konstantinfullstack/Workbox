@@ -24,7 +24,7 @@ function setup(initial: Task, extra: Parameters<typeof mockApi>[0] = {}) {
       json: { items: [current], total: 1, limit: 500, offset: 0 },
     }),
     [`GET /api/v1/tasks/${initial.id}/git`]: () => ({
-      json: { branch: null, localCommitSha: null, reference: null },
+      json: { branch: null, localCommitSha: null, reference: null, repositoryWebUrl: null },
     }),
     ...extra,
   });

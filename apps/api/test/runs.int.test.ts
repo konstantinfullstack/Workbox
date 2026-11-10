@@ -104,7 +104,7 @@ describe('runs API', () => {
     ).json<{ id: string }>();
     expect(
       (await app.inject({ method: 'GET', url: `/api/v1/tasks/${task.id}/git` })).json(),
-    ).toEqual({ branch: null, localCommitSha: null, reference: null });
+    ).toEqual({ branch: null, localCommitSha: null, reference: null, repositoryWebUrl: null });
     const publish = await app.inject({ method: 'POST', url: `/api/v1/tasks/${task.id}/publish` });
     expect(publish.statusCode).toBe(409);
     expect(publish.json()).toMatchObject({ error: { code: 'NOTHING_TO_PUBLISH' } });

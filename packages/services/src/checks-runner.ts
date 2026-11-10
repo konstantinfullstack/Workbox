@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createWriteStream, type WriteStream } from 'node:fs';
 import { agentEnvironment } from '#agents';
+import { summarizeCheckOutput } from '#core';
 import type { CheckCommand, CheckResult } from '#shared';
 
 const OUTPUT_LIMIT = 16_000;
@@ -82,6 +83,7 @@ function runOne(
         exitCode,
         durationMs: Date.now() - started,
         output: output.trim(),
+        summary: summarizeCheckOutput(output),
       };
       if (!full) return resolve(result);
       full.end(

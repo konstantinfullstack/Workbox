@@ -25,6 +25,7 @@ const taskGitSchema = z.object({
   branch: z.string().nullable(),
   localCommitSha: z.string().nullable(),
   reference: gitReferenceSchema.nullable(),
+  repositoryWebUrl: z.string().nullable(),
 });
 
 export const gitRoutes: FastifyPluginAsyncZod<{ services: Services }> = async (

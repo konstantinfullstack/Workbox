@@ -4,3 +4,4 @@ export * from './errors.js';
 export * from './task-state-machine.js';
 export * from './run-state-machine.js';
 export * from './continuation.js';
+export * from './check-summary.js';

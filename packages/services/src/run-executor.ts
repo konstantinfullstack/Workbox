@@ -311,7 +311,7 @@ export class RunExecutor {
           for (const r of checkResults) {
             await event(
               r.status === 'passed' ? 'log' : 'failed',
-              `${r.status === 'passed' ? '✓' : '✗'} ${r.name}: ${r.command} (${Math.round(r.durationMs / 1000)} s)`,
+              `${r.status === 'passed' ? '✓' : '✗'} ${r.name}: ${r.command}${r.summary ? ` — ${r.summary}` : ''} (${Math.round(r.durationMs / 1000)} s)`,
               {
                 level: r.status === 'passed' ? 'info' : 'error',
                 ...(r.status === 'passed' ? {} : { output: r.output.slice(-2_000) }),

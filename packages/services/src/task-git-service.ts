@@ -1,5 +1,5 @@
 import { DomainError } from '#core';
-import { gitReferences, taskRuns, tasks, type Database } from '#database';
+import { gitReferences, projectRepositories, taskRuns, tasks, type Database } from '#database';
 import type { CodeHostRegistry } from '#integrations';
 import { ERROR_CODES, type GitReference } from '#shared';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
@@ -19,6 +19,8 @@ export interface TaskGitInfo {
   /** Latest local commit made by a run. */
   localCommitSha: string | null;
   reference: GitReference | null;
+  /** The repository's web page, for commit and branch links (null if unlinked). */
+  repositoryWebUrl: string | null;
 }
 
 /**
@@ -39,8 +41,9 @@ export class TaskGitService {
 
   async get(taskId: string): Promise<TaskGitInfo> {
     const [task] = await this.db
-      .select({ id: tasks.id })
+      .select({ id: tasks.id, webUrl: projectRepositories.webUrl })
       .from(tasks)
+      .leftJoin(projectRepositories, eq(projectRepositories.projectId, tasks.projectId))
       .where(eq(tasks.id, taskId))
       .limit(1);
     if (!task) throw new DomainError(ERROR_CODES.notFound, `task "${taskId}" not found`);
@@ -71,6 +74,7 @@ export class TaskGitService {
       branch: ref?.branch ?? run?.branch ?? null,
       localCommitSha: lastCommit?.commitSha ?? null,
       reference: ref ? toGitReference(ref) : null,
+      repositoryWebUrl: task.webUrl,
     };
   }
 

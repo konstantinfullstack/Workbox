@@ -873,3 +873,6 @@ button[aria-pressed='true'] {
 .run-files li {
   overflow-wrap: anywhere;
 }
+.check-summary {
+  font-size: 0.9rem;
+}

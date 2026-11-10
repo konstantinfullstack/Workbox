@@ -256,7 +256,7 @@ export function pullRequestBody(input: {
       : input.checks
           .map(
             (c) =>
-              `- ${c.status === 'passed' ? '✅' : '❌'} \`${c.command}\` (${Math.round(c.durationMs / 1000)} s)`,
+              `- ${c.status === 'passed' ? '✅' : '❌'} \`${c.command}\`${c.summary ? `: ${c.summary}` : ''} (${Math.round(c.durationMs / 1000)} s)`,
           )
           .join('\n');
   const criteria = input.task.acceptanceCriteria.length

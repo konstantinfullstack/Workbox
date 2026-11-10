@@ -1,6 +1,6 @@
 # M5 — Git Workflow and Verification
 
-- **Status:** approved 2026-11-10. Steps 1 and 2 implemented.
+- **Status:** approved 2026-11-10. Steps 1–3 implemented.
 - **Spec reference:** §12 M5 (branch/commit/push/PR, checks, test summary, artifacts, QA
   instructions, dashboard Git references)
 - **Already delivered in M4 B2:** branch per task, commit as the user, push, draft PR/MR, configured
@@ -31,8 +31,11 @@
      download)
    - deleted after `WORKBOX_ARTIFACT_RETENTION_DAYS` (default 7) by the worker, hourly
    - saving is best effort: a problem is a warning on the timeline, never a failed run
-3. **Links and summaries:** commit and branch links to the host; a one-line result per check (e.g.
-   "42 passed, 1 failed") on the run and in the PR body.
+3. **Links and summaries** ✅
+   - branch and commit links to GitHub/GitLab (per-host URL formats in `CODE_HOSTS`), shown only
+     once pushed, so they never 404
+   - a one-line result per check from the tool's own report (Vitest, Jest, pytest, cargo, Mocha,
+     `node --test`, `go test`, ESLint, tsc): on the run, on the timeline and in the PR description
 4. **Failures never look like success:** Playwright end-to-end tests against fake GitHub and git
    servers: success, checks fail, push rejected, PR creation fails.
 5. **GitLab for real:** one run on a GitLab repository (merge request).

@@ -16,6 +16,7 @@ import {
   ArtifactStore,
   createServices,
   Publisher,
+  pullRequestBody,
   REVIEW_SYNC_ACTOR,
   ReviewSync,
   RunExecutor,
@@ -521,5 +522,40 @@ describe('run files', () => {
     } finally {
       rmSync(artifactsRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('pull request description', () => {
+  it("includes each check's own result line", () => {
+    const body = pullRequestBody({
+      task: { number: 4, title: 'x', description: '', acceptanceCriteria: [] },
+      summary: 'Did it.',
+      qaSteps: [],
+      verification: 'passed',
+      attempt: 1,
+      agent: 'Claude Code',
+      checks: [
+        {
+          name: 'test',
+          command: 'pnpm test',
+          status: 'passed',
+          exitCode: 0,
+          durationMs: 12_000,
+          output: '',
+          summary: '42 passed',
+        },
+        {
+          name: 'lint',
+          command: 'pnpm lint',
+          status: 'passed',
+          exitCode: 0,
+          durationMs: 3_000,
+          output: '',
+          summary: null,
+        },
+      ],
+    });
+    expect(body).toContain('- ✅ `pnpm test`: 42 passed (12 s)');
+    expect(body).toContain('- ✅ `pnpm lint` (3 s)');
   });
 });

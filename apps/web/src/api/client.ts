@@ -106,11 +106,13 @@ const taskGitSchema = z.object({
   branch: z.string().nullable(),
   localCommitSha: z.string().nullable(),
   reference: gitReferenceSchema.nullable(),
+  repositoryWebUrl: z.string().nullable(),
 });
 export type TaskGit = {
   branch: string | null;
   localCommitSha: string | null;
   reference: GitReference | null;
+  repositoryWebUrl: string | null;
 };
 const eventList = z.object({ items: z.array(runEventSchema) });
 const readinessSchema = z.object({ ready: z.boolean(), reasons: z.array(z.string()) });

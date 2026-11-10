@@ -36,6 +36,7 @@ const makeRun = (overrides: Partial<TaskRun> = {}): TaskRun => ({
       exitCode: 0,
       durationMs: 4_000,
       output: '3 passed',
+      summary: '3 passed',
     },
   ],
   exitReason: null,
@@ -113,6 +114,8 @@ describe('runs panel', () => {
       `/api/v1/runs/${RUN_ID}/artifacts/88888888-8888-4888-8888-888888888888?download=1`,
     );
     expect(files.getByText('(2.0 KB)')).toBeInTheDocument();
+    // The check's own report line is shown next to it.
+    expect(screen.getByText('3 passed', { selector: '.check-summary' })).toBeInTheDocument();
     expect(
       screen.getByText(
         `Kept until ${new Date(expiresAt).toLocaleDateString()}, then deleted automatically.`,

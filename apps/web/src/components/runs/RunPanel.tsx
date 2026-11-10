@@ -7,7 +7,9 @@ import {
   useRunEvents,
   useRunReadiness,
   useRuns,
+  useTaskGit,
 } from '../../api/hooks.js';
+import { gitLinks, type GitLinks } from '../../git-links.js';
 import { ErrorBanner, Loading } from '../Status.js';
 
 const ACTIVE = new Set<TaskRun['state']>(['queued', 'preparing', 'running', 'verifying']);
@@ -37,6 +39,7 @@ export function RunPanel({ task }: { task: Task }) {
   const runs = useRuns(task.id);
   const readiness = useRunReadiness(task.id);
   const actions = useRunActions(task.id);
+  const links = gitLinks(useTaskGit(task.id).data);
   const [note, setNote] = useState('');
   const latest = runs.data?.[0];
   const active = latest && ACTIVE.has(latest.state);
@@ -101,6 +104,7 @@ export function RunPanel({ task }: { task: Task }) {
             key={run.id}
             run={run}
             expanded={index === 0}
+            links={links}
             onCancel={() => actions.cancel.mutate(run.id)}
             cancelling={actions.cancel.isPending}
           />
@@ -117,9 +121,11 @@ function RunView({
   expanded: initiallyExpanded,
   onCancel,
   cancelling,
+  links,
 }: {
   run: TaskRun;
   expanded: boolean;
+  links: GitLinks;
   onCancel: () => void;
   cancelling: boolean;
 }) {
@@ -170,7 +176,11 @@ function RunView({
               {run.commitSha && (
                 <span className="muted">
                   {' '}
-                  · committed <span className="mono">{run.commitSha.slice(0, 7)}</span>
+                  · committed{' '}
+                  <CommitLink
+                    sha={run.commitSha}
+                    url={links.commit(run.commitSha, run.finishedAt)}
+                  />
                 </span>
               )}
             </p>
@@ -185,6 +195,7 @@ function RunView({
                         {check.status === 'passed' ? '✓' : '✗'}
                       </span>{' '}
                       {check.name} <span className="mono small">{check.command}</span>{' '}
+                      {check.summary && <strong className="check-summary">{check.summary}</strong>}{' '}
                       <span className="muted small">({Math.round(check.durationMs / 1000)} s)</span>
                     </summary>
                     <pre className="check-output">{check.output || '(no output)'}</pre>
@@ -343,5 +354,15 @@ function RunFiles({ runId, active }: { runId: string; active: boolean }) {
       </ul>
       <p className="muted small">Kept until {expires}, then deleted automatically.</p>
     </>
+  );
+}
+
+function CommitLink({ sha, url }: { sha: string; url: string | null }) {
+  const short = <span className="mono">{sha.slice(0, 7)}</span>;
+  if (!url) return short;
+  return (
+    <a href={url} target="_blank" rel="noreferrer" title="Open the commit">
+      {short} ↗
+    </a>
   );
 }

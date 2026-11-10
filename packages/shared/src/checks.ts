@@ -45,6 +45,8 @@ export const checkResultSchema = z.object({
   durationMs: z.number().int(),
   /** Last part of the combined output (redacted, truncated). */
   output: z.string(),
+  /** One line from the tool's own report, e.g. "42 passed, 1 failed" (null if not recognised). */
+  summary: z.string().nullable().optional(),
 });
 export type CheckResult = z.infer<typeof checkResultSchema>;
 

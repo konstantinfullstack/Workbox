@@ -2,8 +2,8 @@
 
 ## Current milestone
 
-**M5 — Git workflow and verification: step 2 (run files) implemented on `feat/m5-run-artifacts`
-(built on step 1, PR #3).** Plan: [M5](plans/M5-git-verification.md).
+**M5 — Git workflow and verification: step 3 (links and check summaries) implemented on
+`feat/m5-links-summaries`.** Plan: [M5](plans/M5-git-verification.md).
 
 ## Overview (2026-11-11)
 
@@ -41,15 +41,28 @@ What is built so far. "Your check" = confirmed by the user in the real app.
 | 23                                     | Tasks follow their PR      | PR merged → **Done**; closed → **Changes requested**; checked every 3 min and when the task is opened                              | ✅ Your check (PR #3) |
 | 24                                     | Local branch cleanup       | Merged task branches removed from the working copy, only when safe                                                                 | ✅ Done (PR #3)       |
 | 25                                     | Saved run files            | Agent transcript, full check output and patch per run; shown on the run; deleted after **7 days**                                  | ✅ Done (PR #4)       |
-| 26                                     | Links and check summaries  | Commit and branch links; one result line per check (e.g. "42 passed, 1 failed")                                                    | ⏳ Step 3, next       |
-| 27                                     | End-to-end failure tests   | Browser tests proving failures never show up as success                                                                            | ⏳ Step 4             |
+| 26                                     | Links and check summaries  | Commit and branch links; one result line per check (e.g. "42 passed, 1 failed")                                                    | ✅ Done               |
+| 27                                     | End-to-end failure tests   | Browser tests proving failures never show up as success                                                                            | ⏳ Step 4, next       |
 | 28                                     | GitLab for real            | One real run with a merge request on a GitLab repository                                                                           | ⏳ Step 5             |
 | **Later**                              |                            |                                                                                                                                    |                       |
 | 29                                     | M6                         | Telegram notifications, QA approve / request changes, scheduling                                                                   | Not started           |
 | 30                                     | M7                         | A second agent, Trello sync                                                                                                        | Not started           |
 | 31                                     | Deferred                   | CLI, Docker isolation for agents, sign-in                                                                                          | Not started           |
 
-415 automated tests. Details per step follow below.
+433 automated tests. Details per step follow below.
+
+## Completed — M5 step 3 (links and check summaries)
+
+- [x] Branch and commit links to GitHub/GitLab on the Git panel and each run. Links appear only
+      once the branch or commit is pushed (a commit counts if it is the pushed tip or was made
+      before the last push: task branches are never rewritten).
+- [x] One-line result per check, read from the tool's own report: Vitest, Jest, pytest, cargo,
+      Mocha, `node --test`, `go test`, ESLint, tsc. Shown on the run, on the timeline and in the
+      PR description ("`pnpm test`: 42 passed (12 s)"). Unknown output → no line, as before.
+- [x] Real data: the stored output of `1_64_modelcollector` test checks reads "2 passed".
+
+Verification: lint, typecheck, prettier, build, no schema drift; all tests pass (41 files, **433
+tests**).
 
 ## Completed — M5 step 2 (run files, kept 7 days)
 
@@ -460,6 +473,6 @@ Tests covering the acceptance criteria:
 
 ## Next action
 
-- **You:** run a task (e.g. with **Continue development**), open it, expand the run and look at
-  **Saved files**: open the transcript and a check log, download the patch.
-- **Then:** M5 step 3, links and check summaries.
+- **You:** run a task; on the task page, the branch and commit are links, and each check shows
+  its result line (e.g. "2 passed"); the PR description shows it too.
+- **Then:** M5 step 4, end-to-end failure tests.
