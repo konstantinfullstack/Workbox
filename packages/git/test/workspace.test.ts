@@ -22,7 +22,9 @@ import {
   currentBranch,
   GitError,
   hasUncommittedChanges,
+  pushTaskBranch,
   removeWorkspace,
+  returnToBaseBranch,
   runGit,
   syncRepository,
   taskBranchName,
@@ -91,7 +93,7 @@ describe('syncRepository (one normal working copy per project)', () => {
   it('fetches new commits without touching the checked-out branch or uncommitted work', async () => {
     const path = workspacePath(root, 'demo');
     await sync(path);
-    await checkoutTaskBranch({ path, branch: 'workbox/1-x', defaultBranch: 'main' });
+    await checkoutTaskBranch({ path, branch: 'workbox/1-x', baseBranch: 'main' });
     writeFileSync(join(path, 'work-in-progress.md'), 'unsaved');
     const next = server.commit('kost/app.git', 'second commit');
     expect(await sync(path)).toMatchObject({ action: 'fetched', headSha: next });
@@ -170,7 +172,7 @@ describe('task branches and commits', () => {
     const path = workspacePath(root, 'demo');
     await sync(path);
     expect(
-      await checkoutTaskBranch({ path, branch: 'workbox/2-add-docs', defaultBranch: 'main' }),
+      await checkoutTaskBranch({ path, branch: 'workbox/2-add-docs', baseBranch: 'main' }),
     ).toEqual({ created: true });
     writeFileSync(join(path, 'CONTRIBUTING.md'), '# Contributing\n');
     const changes = await collectBranchChanges(path, 'main');
@@ -194,11 +196,11 @@ describe('task branches and commits', () => {
 
     // Switch to another task and back: work is kept on its own branch.
     expect(
-      await checkoutTaskBranch({ path, branch: 'workbox/3-other', defaultBranch: 'main' }),
+      await checkoutTaskBranch({ path, branch: 'workbox/3-other', baseBranch: 'main' }),
     ).toEqual({ created: true });
     expect(existsSync(join(path, 'CONTRIBUTING.md'))).toBe(false);
     expect(
-      await checkoutTaskBranch({ path, branch: 'workbox/2-add-docs', defaultBranch: 'main' }),
+      await checkoutTaskBranch({ path, branch: 'workbox/2-add-docs', baseBranch: 'main' }),
     ).toEqual({ created: false });
     expect(existsSync(join(path, 'CONTRIBUTING.md'))).toBe(true);
     // Later changes on the branch still compare against the default branch (the PR view).
@@ -214,13 +216,13 @@ describe('task branches and commits', () => {
     await sync(path);
     writeFileSync(join(path, 'stray.txt'), 'x');
     await expect(
-      checkoutTaskBranch({ path, branch: 'workbox/4-x', defaultBranch: 'main' }),
+      checkoutTaskBranch({ path, branch: 'workbox/4-x', baseBranch: 'main' }),
     ).rejects.toThrow(/uncommitted changes on main/);
     await expect(commitTaskChanges({ path, author, message: 'nope' })).rejects.toThrow(
       /only commits on workbox\/ branches/,
     );
     await expect(
-      checkoutTaskBranch({ path, branch: 'feature/x', defaultBranch: 'main' }),
+      checkoutTaskBranch({ path, branch: 'feature/x', baseBranch: 'main' }),
     ).rejects.toThrow(/under workbox\//);
   });
 
@@ -292,5 +294,60 @@ describe('workspace paths', () => {
     );
     expect(statSync(repo).isDirectory()).toBe(true);
     rmSync(repo, { recursive: true, force: true });
+  });
+});
+
+describe('base branch handling', () => {
+  it('starts every new task from the latest base branch and returns there afterwards', async () => {
+    const path = workspacePath(root, 'demo');
+    await sync(path);
+    // Task A on the current main.
+    await checkoutTaskBranch({ path, branch: 'workbox/10-a', baseBranch: 'main' });
+    writeFileSync(join(path, 'a.md'), 'a');
+    await commitTaskChanges({ path, author: { name: 'T', email: 't@example.com' }, message: 'a' });
+    expect(await returnToBaseBranch(path, 'main')).toBe(true);
+    expect(await currentBranch(path)).toBe('main');
+
+    // Someone merges to main on the server; the next task must start from it.
+    const newMain = server.commit('kost/app.git', 'merged elsewhere');
+    await sync(path);
+    await checkoutTaskBranch({ path, branch: 'workbox/11-b', baseBranch: 'main' });
+    expect((await runGit(['-C', path, 'rev-parse', 'HEAD'])).stdout.trim()).toBe(newMain);
+    expect((await runGit(['-C', path, 'rev-parse', 'main'])).stdout.trim()).toBe(newMain); // local main fast-forwarded
+    firstSha = newMain;
+  });
+
+  it('uses another base branch (e.g. dev) and refuses a base that does not exist', async () => {
+    const devSha = server.commit('kost/app.git', 'dev work', 'dev');
+    const path = workspacePath(root, 'demo');
+    await sync(path);
+    await checkoutTaskBranch({ path, branch: 'workbox/12-on-dev', baseBranch: 'dev' });
+    expect((await runGit(['-C', path, 'rev-parse', 'HEAD'])).stdout.trim()).toBe(devSha);
+    expect((await collectBranchChanges(path, 'dev')).baseSha).toBe(devSha);
+    await expect(
+      checkoutTaskBranch({ path, branch: 'workbox/13-x', baseBranch: 'nope' }),
+    ).rejects.toThrow(/base branch "nope" doesn't exist/);
+  });
+
+  it('fast-forwards commits pushed to the task branch on the server even when already on it', async () => {
+    const path = workspacePath(root, 'demo');
+    await sync(path);
+    await checkoutTaskBranch({ path, branch: 'workbox/14-shared', baseBranch: 'main' });
+    writeFileSync(join(path, 'mine.md'), 'mine');
+    await commitTaskChanges({
+      path,
+      author: { name: 'T', email: 't@example.com' },
+      message: 'mine',
+    });
+    await pushTaskBranch({
+      path,
+      branch: 'workbox/14-shared',
+      credentials: credentials(),
+      allowHttp: true,
+    });
+    const fix = server.commit('kost/app.git', 'reviewer fix', 'workbox/14-shared');
+    await sync(path);
+    await checkoutTaskBranch({ path, branch: 'workbox/14-shared', baseBranch: 'main' }); // already current
+    expect((await runGit(['-C', path, 'rev-parse', 'HEAD'])).stdout.trim()).toBe(fix);
   });
 });

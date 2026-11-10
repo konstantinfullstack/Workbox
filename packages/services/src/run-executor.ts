@@ -16,6 +16,7 @@ import {
 } from '#database';
 import {
   checkoutTaskBranch,
+  returnToBaseBranch,
   collectBranchChanges,
   commitTaskChanges,
   GitError,
@@ -120,6 +121,10 @@ export class RunExecutor {
           event,
         );
 
+      // Tasks start from, and PRs target, the project's base branch (e.g. main or dev).
+
+      const base = ctx.project.defaultBranch;
+
       const sync = await this.options.syncer.sync(ctx.repo.id);
       if (sync.status !== 'ready') {
         return await this.fail(
@@ -129,10 +134,7 @@ export class RunExecutor {
           event,
         );
       }
-      await event(
-        'stage',
-        `Repository up to date (${ctx.repo.defaultBranch} @ ${sync.headSha?.slice(0, 7) ?? 'empty'})`,
-      );
+      await event('stage', `Fetched the latest changes from ${ctx.repo.fullPath}`);
       if (await this.cancelRequested(runId)) return await this.cancelled(runId, 'preparing', event);
 
       const [workspace] = await db
@@ -154,7 +156,7 @@ export class RunExecutor {
         checkout = await checkoutTaskBranch({
           path,
           branch,
-          defaultBranch: ctx.repo.defaultBranch,
+          baseBranch: base,
         });
       } catch (error) {
         if (error instanceof GitError)
@@ -309,7 +311,7 @@ export class RunExecutor {
         'verification',
         `Run #${run.attempt}: verifying (${verification})`,
       );
-      const changes = await collectBranchChanges(path, ctx.repo.defaultBranch);
+      const changes = await collectBranchChanges(path, base);
       await event('stage', `${changes.files.length} file(s) changed on the branch`, {
         files: changes.files.length,
       });
@@ -344,7 +346,23 @@ export class RunExecutor {
         checkResults,
       };
 
+      /** Leave the working copy on the up-to-date base branch once the work is committed. */
+      const backToBase = async () => {
+        try {
+          if (await returnToBaseBranch(path, base)) {
+            await event('stage', `Switched the working copy back to ${base} (up to date)`);
+          }
+        } catch (error) {
+          await event(
+            'log',
+            `Stayed on ${branch}: ${error instanceof Error ? error.message : 'could not switch back'}`,
+            { level: 'warn' },
+          );
+        }
+      };
+
       if (verification === 'failed') {
+        await backToBase();
         const failed = checkResults
           .filter((r) => r.status !== 'passed')
           .map((r) => r.name)
@@ -385,6 +403,7 @@ export class RunExecutor {
           qaReason = `Run #${run.attempt} completed (${changes.files.length} file(s)), but publishing failed: ${message}`;
         }
       }
+      await backToBase();
       await event('completed', 'Run completed: ready for your review');
       return await this.finish(runId, 'verifying', 'completed', null, outcome, qaReason);
     } catch (error) {

@@ -36,6 +36,11 @@ Nothing is committed yet. The user asked to hold commits for now.
       in before the next run; diverged histories are refused, never overwritten
 - [x] **Dependency folders** (`node_modules`, `.venv`, …) are excluded locally
       (`.git/info/exclude`) so check setup never ends up in a commit
+- [x] **Every new task starts from the latest base branch** (user request after the first merged
+      PR): the project's **Default branch** (`main`/`dev`) is checked out, fast-forwarded to the
+      server and branched from; PRs target it; after a successful run the copy returns to it
+- [x] **First real PR:** task #2's `CONTRIBUTING.md` was published from Workbox as draft PR #2 on
+      `1_64_modelcollector` and merged by the user (2026-11-10)
 - [x] **`git_references`** (spec §5): branch, pushed commit, PR number/URL/state, last error. PR
       state is refreshed from the host when the task is viewed (at most once a minute). The
       repository's "pull requests" access becomes verified or denied on the first attempt

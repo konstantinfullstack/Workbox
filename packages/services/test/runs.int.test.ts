@@ -226,7 +226,12 @@ describe('a successful run', () => {
     expect(log.stdout).toMatch(/^Add contributing guide$/m);
     expect(log.stdout).toContain('Generated-by: Workbox (Claude Code)');
     expect((await runGit(['-C', worktree, 'status', '--porcelain'])).stdout).toBe('');
-    expect(existsSync(join(worktree, 'CONTRIBUTING.md'))).toBe(true);
+    // After the run the copy is back on the up-to-date base branch; the work lives on the task branch.
+    expect((await runGit(['-C', worktree, 'branch', '--show-current'])).stdout.trim()).toBe('main');
+    expect(existsSync(join(worktree, 'CONTRIBUTING.md'))).toBe(false);
+    expect(
+      (await runGit(['-C', worktree, 'show', `${finished.branch}:CONTRIBUTING.md`])).stdout,
+    ).toContain('Open a PR.');
     // The token never reaches the worktree, events or run row.
     expect(JSON.stringify(events) + JSON.stringify(finished)).not.toContain(TOKEN);
     expect(
@@ -314,12 +319,14 @@ describe('re-runs and recovery', () => {
     const tasks = (await services.tasks.list(project.id, { limit: 50, offset: 0 })).items;
     const contributing = tasks.find((t) => t.title === 'Add contributing guide')!;
     const path = join(root, project.slug);
-    // The last run (CHANGELOG task) left the copy on its branch; the contributing work lives on its own.
-    expect((await runGit(['-C', path, 'branch', '--show-current'])).stdout.trim()).toBe(
-      `workbox/${tasks.find((t) => t.title === 'Do nothing')!.number}-do-nothing`,
-    );
+    // Every successful run returns the copy to main; each task's work lives on its own branch.
+    expect((await runGit(['-C', path, 'branch', '--show-current'])).stdout.trim()).toBe('main');
     expect(existsSync(join(path, 'CONTRIBUTING.md'))).toBe(false);
-    expect(existsSync(join(path, 'CHANGELOG.md'))).toBe(true);
+    expect(existsSync(join(path, 'CHANGELOG.md'))).toBe(false);
+    const changelogBranch = `workbox/${tasks.find((t) => t.title === 'Do nothing')!.number}-do-nothing`;
+    expect(
+      (await runGit(['-C', path, 'show', `${changelogBranch}:CHANGELOG.md`])).stdout,
+    ).toContain('# Changelog');
     expect(
       (
         await runGit([
@@ -339,7 +346,7 @@ describe('re-runs and recovery', () => {
     const run = await services.runs.start(task.id, {}, ctx);
     expect(await agent('unused', done('x')).execute(run.id)).toBe('failed');
     expect((await services.runs.get(run.id)).exitReason).toMatch(
-      /uncommitted changes on workbox\/.*commit or discard them/,
+      /uncommitted changes on main.*commit or discard them/,
     );
     expect(readFileSync(join(path, 'hand-edit.txt'), 'utf8')).toBe('edited by hand'); // never discarded
     rmSync(join(path, 'hand-edit.txt'));

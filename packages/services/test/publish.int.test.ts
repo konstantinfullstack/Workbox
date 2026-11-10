@@ -321,6 +321,32 @@ describe('publishing problems and manual publish', () => {
     expect(await remoteBranches()).toContain(`refs/heads/${branch}`);
   });
 
+  it("uses the project's base branch (e.g. develop): branch from it, PR into it, copy returns to it", async () => {
+    const developSha = git.commit('kost/app.git', 'develop work', 'develop');
+    await services.projects.update(project.slug, { defaultBranch: 'develop' }, ctx);
+    try {
+      const task = await services.tasks.create(project.id, { title: 'On develop' }, ctx);
+      const run = await services.runs.start(task.id, {}, ctx);
+      expect(
+        await executor('develop', write('STATUS', 'pass\n') + done('On develop.')).execute(run.id),
+      ).toBe('completed');
+      const finished = await services.runs.get(run.id);
+      expect(finished.baseSha).toBe(developSha);
+      expect(github.reviewRequests.at(-1)).toMatchObject({
+        head: `workbox/${task.number}-on-develop`,
+        base: 'develop',
+      });
+      const path = join(root, project.slug);
+      expect((await runGit(['-C', path, 'branch', '--show-current'])).stdout.trim()).toBe(
+        'develop',
+      );
+      const events = (await services.runs.events(run.id, 0, 200)).map((e) => e.message);
+      expect(events).toContain('Switched the working copy back to develop (up to date)');
+    } finally {
+      await services.projects.update(project.slug, { defaultBranch: 'main' }, ctx);
+    }
+  });
+
   it('refreshes the PR state from the host when viewed', async () => {
     const task = (await services.tasks.list(project.id, { q: 'Needs checks', limit: 5, offset: 0 }))
       .items[0]!;

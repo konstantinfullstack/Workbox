@@ -3,6 +3,7 @@ import {
   connections,
   gitReferences,
   projectRepositories,
+  projects,
   taskRuns,
   tasks,
   workspaces,
@@ -50,9 +51,11 @@ export class Publisher {
         repo: projectRepositories,
         workspace: workspaces,
         provider: connections.provider,
+        baseBranch: projects.defaultBranch,
       })
       .from(tasks)
       .innerJoin(projectRepositories, eq(projectRepositories.projectId, tasks.projectId))
+      .innerJoin(projects, eq(projects.id, tasks.projectId))
       .innerJoin(connections, eq(connections.id, projectRepositories.connectionId))
       .leftJoin(workspaces, eq(workspaces.projectRepositoryId, projectRepositories.id))
       .where(eq(tasks.id, taskId))
@@ -73,10 +76,10 @@ export class Publisher {
     }
     const branch = run.branch;
     const path = ctx.workspace.path;
-    if ((await commitsAhead(path, branch, ctx.repo.defaultBranch)) === 0) {
+    if ((await commitsAhead(path, branch, ctx.baseBranch)) === 0) {
       throw new DomainError(
         ERROR_CODES.nothingToPublish,
-        `${branch} has no commits that aren't already on ${ctx.repo.defaultBranch}`,
+        `${branch} has no commits that aren't already on ${ctx.baseBranch}`,
       );
     }
     const [latestSuccess] = await this.db
@@ -129,7 +132,7 @@ export class Publisher {
               })
             : await adapter.createReviewRequest(account, token, repoRef, {
                 head: branch,
-                base: ctx.repo.defaultBranch,
+                base: ctx.baseBranch,
                 title,
                 body,
                 draft: true,

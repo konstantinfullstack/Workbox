@@ -153,6 +153,10 @@ folder). After a change, the worker re-syncs every clone into the new location a
 - **Tokens** are given to git only for each clone or fetch, through a temporary prompt helper. They
   are never written to `.git/config`, the remote URL or logs. Git ignores your personal
   `~/.gitconfig` and credential helpers while doing this.
+- **Every new task starts from the latest base branch:** the project's **Default branch** setting,
+  e.g. `main` or `dev`, which is also where its pull request goes. Workbox fetches, checks out the
+  base, fast-forwards it and branches from it. After a successful run the copy is back on that
+  up-to-date base branch.
 - **Agent runs** switch this copy to the task's `workbox/<n>-…` branch, then commit the result
   there as you (`WORKBOX_GIT_AUTHOR_NAME` + the account's no-reply email). You can open the folder
   in your editor to look around, but do your own coding in your own clone. Workbox won't start a
