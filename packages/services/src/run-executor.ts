@@ -22,6 +22,7 @@ import {
   GitError,
   hasUncommittedChanges,
   taskBranchName,
+  writeBranchPatch,
   type CommitAuthor,
 } from '#git';
 import { noReplyEmail } from '#integrations';
@@ -37,6 +38,7 @@ import {
   type TaskState,
 } from '#shared';
 import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { artifactSlug, type ArtifactStore } from './artifact-store.js';
 import { recordAudit } from './audit.js';
 import { describeFailures, runChecks } from './checks-runner.js';
 import type { ConnectionService } from './connection-service.js';
@@ -63,6 +65,8 @@ export interface RunExecutorOptions {
   publisher?: Publisher;
   /** Per check command time limit (default 15 min). */
   checkTimeoutMs?: number;
+  /** Saves each run's transcript, full check output and patch (M5). Optional in tests. */
+  artifacts?: ArtifactStore;
 }
 
 const orchestrator: ActionContext = { actor: ORCHESTRATOR_ACTOR };
@@ -92,6 +96,25 @@ export class RunExecutor {
         .insert(runEvents)
         .values({ runId, seq, type, message: message.slice(0, 4_000), data });
     };
+    /** Saving files is best effort: a problem is shown on the timeline, never fails the run. */
+    const saveArtifact = async (step: string, save: (store: ArtifactStore) => Promise<unknown>) => {
+      const store = this.options.artifacts;
+      if (!store) return;
+      try {
+        await save(store);
+      } catch (error) {
+        await event(
+          'log',
+          `Could not save ${step}: ${error instanceof Error ? error.message : 'unknown error'}`,
+          { level: 'warn' },
+        ).catch(() => undefined);
+      }
+    };
+    const TRANSCRIPT = 'agent-transcript.jsonl';
+    let transcriptPath: string | undefined;
+    await saveArtifact('the agent transcript', async (store) => {
+      transcriptPath = await store.prepare(runId, TRANSCRIPT);
+    });
 
     await this.moveRun(runId, 'queued', 'preparing', {
       workerId: this.options.workerId,
@@ -201,6 +224,7 @@ export class RunExecutor {
               }),
               timeoutMs: this.options.timeoutMs ?? 30 * 60_000,
               allowedCommands,
+              ...(transcriptPath ? { transcriptPath } : {}),
             },
             (e: AgentEvent) =>
               void pending.push(event(e.type, e.message, e.data).catch(() => undefined)),
@@ -209,6 +233,9 @@ export class RunExecutor {
         } finally {
           clearInterval(poll);
           await Promise.all(pending);
+          await saveArtifact('the agent transcript', (store) =>
+            store.record(runId, 'transcript', TRANSCRIPT),
+          );
         }
       };
 
@@ -269,11 +296,22 @@ export class RunExecutor {
             ...(this.options.checkTimeoutMs ? { timeoutMs: this.options.checkTimeoutMs } : {}),
             onStart: (step) =>
               void event('log', `$ ${step.command}`, { level: 'info' }).catch(() => undefined),
+            ...(this.options.artifacts
+              ? {
+                  outputFile: (step: { name: string }, index: number) =>
+                    this.options.artifacts!.prepare(runId, checkLogName(pass, index, step.name)),
+                }
+              : {}),
           });
+          for (const [index, r] of checkResults.entries()) {
+            await saveArtifact(`the output of ${r.name}`, (store) =>
+              store.record(runId, 'check_output', checkLogName(pass, index, r.name)),
+            );
+          }
           for (const r of checkResults) {
             await event(
               r.status === 'passed' ? 'log' : 'failed',
-              `${r.status === 'passed' ? '✓' : '✗'} ${r.name}: ${r.command} (${Math.round(r.durationMs / 1000)} s)`,
+              `${r.status === 'passed' ? '✓' : '✗'} ${r.name}: ${r.command}${r.summary ? ` — ${r.summary}` : ''} (${Math.round(r.durationMs / 1000)} s)`,
               {
                 level: r.status === 'passed' ? 'info' : 'error',
                 ...(r.status === 'passed' ? {} : { output: r.output.slice(-2_000) }),
@@ -333,6 +371,13 @@ export class RunExecutor {
         await event('stage', `Committed ${commitSha.slice(0, 7)} on ${branch} as ${author.name}`, {
           commitSha,
         });
+      if (changes.baseSha) {
+        const baseSha = changes.baseSha;
+        await saveArtifact('the patch', async (store) => {
+          await writeBranchPatch(path, baseSha, await store.prepare(runId, 'branch.patch'));
+          await store.record(runId, 'patch', 'branch.patch');
+        });
+      }
       const outcome = {
         ...usage,
         summary: result.summary,
@@ -607,4 +652,9 @@ export function commitMessage(input: {
 }): string {
   const body = input.summary.trim();
   return `${input.title}\n\n${body ? `${body}\n\n` : ''}Workbox-Task: #${input.number} (run ${input.attempt})\nGenerated-by: Workbox (${input.agent})\n`;
+}
+
+/** `checks/1-2-test.log`: check pass (1, or 2 after the retry), step number, step name. */
+function checkLogName(pass: number, index: number, name: string): string {
+  return `checks/${pass}-${index + 1}-${artifactSlug(name)}.log`;
 }

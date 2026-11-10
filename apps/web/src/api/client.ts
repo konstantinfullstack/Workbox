@@ -11,6 +11,8 @@ import {
   type GitReference,
   type ProjectChecks,
   runDiffSchema,
+  runArtifactSchema,
+  type RunArtifact,
   runEventSchema,
   taskRunSchema,
   type RunDiff,
@@ -104,11 +106,13 @@ const taskGitSchema = z.object({
   branch: z.string().nullable(),
   localCommitSha: z.string().nullable(),
   reference: gitReferenceSchema.nullable(),
+  repositoryWebUrl: z.string().nullable(),
 });
 export type TaskGit = {
   branch: string | null;
   localCommitSha: string | null;
   reference: GitReference | null;
+  repositoryWebUrl: string | null;
 };
 const eventList = z.object({ items: z.array(runEventSchema) });
 const readinessSchema = z.object({ ready: z.boolean(), reasons: z.array(z.string()) });
@@ -221,6 +225,14 @@ export const api = {
     (await request('GET', `/runs/${runId}/events?limit=1000`, eventList)).items,
   runDiff: (runId: string): Promise<RunDiff> =>
     request('GET', `/runs/${runId}/diff`, runDiffSchema),
+  runArtifacts: async (runId: string): Promise<RunArtifact[]> =>
+    (
+      await request(
+        'GET',
+        `/runs/${runId}/artifacts`,
+        z.object({ items: z.array(runArtifactSchema) }),
+      )
+    ).items,
   cancelRun: (runId: string): Promise<TaskRun> =>
     request('POST', `/runs/${runId}/cancel`, taskRunSchema),
 

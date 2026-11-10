@@ -11,6 +11,9 @@ export interface CodeHostDefinition {
   tokenPlaceholder: string;
   /** Human instructions: which token to create, where, and with what permissions. */
   tokenHelp: { summary: string; steps: string[]; settingsUrl: (baseUrl: string) => string };
+  /** Web links inside a repository (`webUrl` = the repository's page). */
+  commitUrl: (webUrl: string, sha: string) => string;
+  branchUrl: (webUrl: string, branch: string) => string;
 }
 
 export const CODE_HOSTS: Record<CodeHostProvider, CodeHostDefinition> = {
@@ -35,6 +38,8 @@ export const CODE_HOSTS: Record<CodeHostProvider, CodeHostDefinition> = {
       ],
       settingsUrl: (baseUrl) => `${baseUrl.replace(/\/$/, '')}/settings/personal-access-tokens/new`,
     },
+    commitUrl: (webUrl, sha) => `${trimSlash(webUrl)}/commit/${sha}`,
+    branchUrl: (webUrl, branch) => `${trimSlash(webUrl)}/tree/${encodeBranch(branch)}`,
   },
   gitlab: {
     provider: 'gitlab',
@@ -56,5 +61,16 @@ export const CODE_HOSTS: Record<CodeHostProvider, CodeHostDefinition> = {
       settingsUrl: (baseUrl) =>
         `${baseUrl.replace(/\/$/, '')}/-/user_settings/personal_access_tokens`,
     },
+    commitUrl: (webUrl, sha) => `${trimSlash(webUrl)}/-/commit/${sha}`,
+    branchUrl: (webUrl, branch) => `${trimSlash(webUrl)}/-/tree/${encodeBranch(branch)}`,
   },
 };
+
+function trimSlash(url: string): string {
+  return url.replace(/\/+$/, '');
+}
+
+/** Branch names keep their `/` in web URLs; everything else is encoded. */
+function encodeBranch(branch: string): string {
+  return branch.split('/').map(encodeURIComponent).join('/');
+}

@@ -1,5 +1,6 @@
 import { CODE_HOSTS, type Task } from '#shared';
 import { usePublishTask, useTaskGit } from '../api/hooks.js';
+import { gitLinks } from '../git-links.js';
 import { ErrorBanner, Loading } from './Status.js';
 
 const REVIEW_BADGE = {
@@ -24,6 +25,8 @@ export function GitPanel({ task }: { task: Task }) {
     );
   }
   const ref = info.reference;
+  const links = gitLinks(info);
+  const commitUrl = info.localCommitSha ? links.commit(info.localCommitSha, null) : null;
   const label = ref ? CODE_HOSTS[ref.provider].reviewRequestLabel : 'pull request';
   const unpublished = info.localCommitSha !== null && info.localCommitSha !== ref?.pushedSha;
   const canPublish =
@@ -50,10 +53,24 @@ export function GitPanel({ task }: { task: Task }) {
       <ErrorBanner error={publish.error ?? git.error} />
       <dl className="details">
         <dt>Branch</dt>
-        <dd className="mono">{info.branch}</dd>
+        <dd className="mono">
+          {links.branch ? (
+            <a href={links.branch} target="_blank" rel="noreferrer">
+              {info.branch} ↗
+            </a>
+          ) : (
+            info.branch
+          )}
+        </dd>
         <dt>Latest commit</dt>
         <dd className="mono">
-          {info.localCommitSha?.slice(0, 7) ?? '—'}
+          {commitUrl ? (
+            <a href={commitUrl} target="_blank" rel="noreferrer">
+              {info.localCommitSha!.slice(0, 7)} ↗
+            </a>
+          ) : (
+            (info.localCommitSha?.slice(0, 7) ?? '—')
+          )}
           {unpublished && <span className="warning-text small"> · not published yet</span>}
         </dd>
         <dt>{label[0]!.toUpperCase() + label.slice(1)}</dt>
@@ -81,7 +98,8 @@ export function GitPanel({ task }: { task: Task }) {
       {ref?.lastError && <p className="warning-text">{ref.lastError}</p>}
       {ref?.reviewState === 'merged' && task.state !== 'done' && (
         <p className="small">
-          The {label} is merged: mark the task as done when you've finished testing.
+          The {label} is merged. Tasks waiting in Ready for QA move to Done automatically; move this
+          one yourself when you've finished with it.
         </p>
       )}
     </section>

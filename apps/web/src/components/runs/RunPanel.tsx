@@ -1,12 +1,15 @@
-import type { RunEvent, Task, TaskRun } from '#shared';
+import type { RunArtifact, RunEvent, Task, TaskRun } from '#shared';
 import { useEffect, useRef, useState } from 'react';
 import {
   useRunActions,
+  useRunArtifacts,
   useRunDiff,
   useRunEvents,
   useRunReadiness,
   useRuns,
+  useTaskGit,
 } from '../../api/hooks.js';
+import { gitLinks, type GitLinks } from '../../git-links.js';
 import { ErrorBanner, Loading } from '../Status.js';
 
 const ACTIVE = new Set<TaskRun['state']>(['queued', 'preparing', 'running', 'verifying']);
@@ -36,6 +39,7 @@ export function RunPanel({ task }: { task: Task }) {
   const runs = useRuns(task.id);
   const readiness = useRunReadiness(task.id);
   const actions = useRunActions(task.id);
+  const links = gitLinks(useTaskGit(task.id).data);
   const [note, setNote] = useState('');
   const latest = runs.data?.[0];
   const active = latest && ACTIVE.has(latest.state);
@@ -100,6 +104,7 @@ export function RunPanel({ task }: { task: Task }) {
             key={run.id}
             run={run}
             expanded={index === 0}
+            links={links}
             onCancel={() => actions.cancel.mutate(run.id)}
             cancelling={actions.cancel.isPending}
           />
@@ -116,9 +121,11 @@ function RunView({
   expanded: initiallyExpanded,
   onCancel,
   cancelling,
+  links,
 }: {
   run: TaskRun;
   expanded: boolean;
+  links: GitLinks;
   onCancel: () => void;
   cancelling: boolean;
 }) {
@@ -169,7 +176,11 @@ function RunView({
               {run.commitSha && (
                 <span className="muted">
                   {' '}
-                  · committed <span className="mono">{run.commitSha.slice(0, 7)}</span>
+                  · committed{' '}
+                  <CommitLink
+                    sha={run.commitSha}
+                    url={links.commit(run.commitSha, run.finishedAt)}
+                  />
                 </span>
               )}
             </p>
@@ -184,6 +195,7 @@ function RunView({
                         {check.status === 'passed' ? '✓' : '✗'}
                       </span>{' '}
                       {check.name} <span className="mono small">{check.command}</span>{' '}
+                      {check.summary && <strong className="check-summary">{check.summary}</strong>}{' '}
                       <span className="muted small">({Math.round(check.durationMs / 1000)} s)</span>
                     </summary>
                     <pre className="check-output">{check.output || '(no output)'}</pre>
@@ -237,6 +249,7 @@ function RunView({
               )}
             </>
           )}
+          <RunFiles runId={run.id} active={active} />
           <h3>Timeline</h3>
           {events.isPending ? (
             <Loading what="timeline" />
@@ -297,5 +310,59 @@ export function DiffView({ diff, truncated }: { diff: string; truncated: boolean
         ))}
       </pre>
     </div>
+  );
+}
+
+const KIND_LABEL: Record<RunArtifact['kind'], string> = {
+  transcript: 'Agent transcript',
+  check_output: 'Check output',
+  patch: 'Patch',
+};
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** Full files saved for the run (M5): view in the browser or download, until they expire. */
+function RunFiles({ runId, active }: { runId: string; active: boolean }) {
+  const files = useRunArtifacts(runId, active);
+  if (!files.data || files.data.length === 0) return null;
+  const expires = new Date(
+    Math.min(...files.data.map((f) => new Date(f.expiresAt).getTime())),
+  ).toLocaleDateString();
+  return (
+    <>
+      <h3>Saved files</h3>
+      <ul className="run-files" aria-label="Saved files">
+        {files.data.map((file) => {
+          const url = `/api/v1/runs/${runId}/artifacts/${file.id}`;
+          return (
+            <li key={file.id}>
+              <span className="muted small">{KIND_LABEL[file.kind]}</span>{' '}
+              <a href={url} target="_blank" rel="noreferrer" className="mono">
+                {file.name}
+              </a>{' '}
+              <span className="muted small">({formatSize(file.sizeBytes)})</span>{' '}
+              <a href={`${url}?download=1`} className="small" aria-label={`Download ${file.name}`}>
+                Download
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="muted small">Kept until {expires}, then deleted automatically.</p>
+    </>
+  );
+}
+
+function CommitLink({ sha, url }: { sha: string; url: string | null }) {
+  const short = <span className="mono">{sha.slice(0, 7)}</span>;
+  if (!url) return short;
+  return (
+    <a href={url} target="_blank" rel="noreferrer" title="Open the commit">
+      {short} ↗
+    </a>
   );
 }

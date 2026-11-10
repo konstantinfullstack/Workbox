@@ -96,6 +96,7 @@ describe('migrations', () => {
         'git_references',
         'project_repositories',
         'projects',
+        'run_artifacts',
         'run_events',
         'task_dependencies',
         'task_runs',

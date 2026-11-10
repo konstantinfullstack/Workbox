@@ -861,3 +861,18 @@ button[aria-pressed='true'] {
   font-weight: 500;
   margin: 0 0 0.5rem;
 }
+
+/* --- M5: run files ---------------------------------------------------------------------- */
+.run-files {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.25rem;
+  display: grid;
+  gap: 0.2rem;
+}
+.run-files li {
+  overflow-wrap: anywhere;
+}
+.check-summary {
+  font-size: 0.9rem;
+}

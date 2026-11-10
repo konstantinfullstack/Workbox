@@ -104,7 +104,7 @@ describe('runs API', () => {
     ).json<{ id: string }>();
     expect(
       (await app.inject({ method: 'GET', url: `/api/v1/tasks/${task.id}/git` })).json(),
-    ).toEqual({ branch: null, localCommitSha: null, reference: null });
+    ).toEqual({ branch: null, localCommitSha: null, reference: null, repositoryWebUrl: null });
     const publish = await app.inject({ method: 'POST', url: `/api/v1/tasks/${task.id}/publish` });
     expect(publish.statusCode).toBe(409);
     expect(publish.json()).toMatchObject({ error: { code: 'NOTHING_TO_PUBLISH' } });
@@ -141,6 +141,13 @@ describe('runs API', () => {
     });
   });
 
+  it('answers 404 for files of an unknown run', async () => {
+    const id = '99999999-9999-4999-8999-999999999999';
+    const file = await app.inject({ method: 'GET', url: `/api/v1/runs/${id}/artifacts/${id}` });
+    expect(file.statusCode).toBe(404);
+    expect(file.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+  });
+
   it('documents the run routes', async () => {
     const spec = (await app.inject({ method: 'GET', url: '/docs/json' })).json<{
       paths: Record<string, unknown>;
@@ -157,6 +164,8 @@ describe('runs API', () => {
         '/api/v1/tasks/{taskId}/git',
         '/api/v1/tasks/{taskId}/publish',
         '/api/v1/projects/{project}/continue',
+        '/api/v1/runs/{runId}/artifacts',
+        '/api/v1/runs/{runId}/artifacts/{artifactId}',
       ]),
     );
   });

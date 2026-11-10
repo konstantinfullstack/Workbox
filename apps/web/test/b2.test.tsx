@@ -115,6 +115,7 @@ describe('git panel', () => {
         json: {
           branch: 'workbox/2-add-docs',
           localCommitSha: 'c'.repeat(40),
+          repositoryWebUrl: 'https://github.com/kost/workbox',
           reference: {
             provider: 'github',
             branch: 'workbox/2-add-docs',
@@ -137,6 +138,15 @@ describe('git panel', () => {
     );
     expect(panel.getByText('draft')).toBeInTheDocument();
     expect(panel.queryByRole('button', { name: /Publish/ })).not.toBeInTheDocument();
+    // Pushed branch and commit link to GitHub.
+    expect(panel.getByRole('link', { name: 'workbox/2-add-docs ↗' })).toHaveAttribute(
+      'href',
+      'https://github.com/kost/workbox/tree/workbox/2-add-docs',
+    );
+    expect(panel.getByRole('link', { name: 'ccccccc ↗' })).toHaveAttribute(
+      'href',
+      `https://github.com/kost/workbox/commit/${'c'.repeat(40)}`,
+    );
   });
 
   it('offers publishing for an unpublished commit and shows the last error', async () => {
@@ -146,6 +156,7 @@ describe('git panel', () => {
         json: {
           branch: 'workbox/2-add-docs',
           localCommitSha: 'd'.repeat(40),
+          repositoryWebUrl: 'https://github.com/kost/workbox',
           reference: {
             provider: 'github',
             branch: 'workbox/2-add-docs',
@@ -164,6 +175,9 @@ describe('git panel', () => {
     renderRoute(<TaskPage />, '/tasks/:taskId', `/tasks/${task.id}`);
     const panel = within(await screen.findByRole('region', { name: 'Git' }));
     expect(await panel.findByText(/not published yet/)).toBeInTheDocument();
+    // Nothing pushed yet: no links that would 404.
+    expect(panel.queryByRole('link', { name: /workbox\/2-add-docs/ })).not.toBeInTheDocument();
+    expect(panel.queryByRole('link', { name: /ddddddd/ })).not.toBeInTheDocument();
     expect(panel.getByText('The token may not open pull/merge requests')).toBeInTheDocument();
     await userEvent.click(panel.getByRole('button', { name: 'Retry publishing' }));
     await waitFor(() =>

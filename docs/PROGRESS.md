@@ -2,15 +2,88 @@
 
 ## Current milestone
 
-**M5 — Git workflow and verification: step 1 (tasks follow their pull request) implemented on
-`feat/m5-pr-sync`.** Plan: [M5](plans/M5-git-verification.md). M4 is complete (PR #1, #2 merged).
+**M5 — Git workflow and verification: step 3 (links and check summaries) implemented on
+`feat/m5-links-summaries`.** Plan: [M5](plans/M5-git-verification.md).
 
-| Milestone                                         | Status                                                 |
-| ------------------------------------------------- | ------------------------------------------------------ |
-| M1 — Foundation                                   | ✅ Done; approved by the user 2026-11-04               |
-| M2 — Projects, Tasks, Minimal Admin               | ✅ Done; user checked CRUD in the dashboard 2026-11-04 |
-| M3 — Credential Vault, Connections (CLI after M4) | ✅ Implemented, awaiting approval                      |
-| M4–M7                                             | Not started                                            |
+## Overview (2026-11-11)
+
+What is built so far. "Your check" = confirmed by the user in the real app.
+
+| #                                      | Area                       | What works                                                                                                                         | Status                |
+| -------------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| **M1 — Foundation**                    |                            |                                                                                                                                    |                       |
+| 1                                      | Project setup              | Single TypeScript codebase with one root `package.json` (pnpm); API (Fastify), worker (BullMQ), dashboard (React)                  | ✅ Done               |
+| 2                                      | Infrastructure             | Your own Postgres 18; Redis via Docker Compose; database migrations                                                                | ✅ Done               |
+| 3                                      | Health and CI              | `/health`, readiness checks, API docs at `/docs`; GitHub Actions runs lint, typecheck, tests, build and a secret scan              | ✅ Done               |
+| **M2 — Projects and tasks**            |                            |                                                                                                                                    |                       |
+| 4                                      | Projects                   | Create, edit and archive projects; default branch per project                                                                      | ✅ Your check         |
+| 5                                      | Tasks                      | Create and edit tasks; priority, acceptance criteria, dependencies between tasks                                                   | ✅ Your check         |
+| 6                                      | Task statuses              | Backlog → In progress → Verification → Ready for QA → Done, plus Blocked, Changes requested, Cancelled; invalid moves rejected     | ✅ Done               |
+| 7                                      | History                    | Every status change recorded (who, when, why) and shown on the task; every change audited                                          | ✅ Done               |
+| 8                                      | Dashboard                  | Task board by status, project page, task page                                                                                      | ✅ Your check         |
+| **M3 — Accounts and repositories**     |                            |                                                                                                                                    |                       |
+| 9                                      | Encrypted token storage    | Tokens encrypted at rest; never shown, logged or given to the agent                                                                | ✅ Done               |
+| 10                                     | GitHub and GitLab accounts | Add an account with a token (GitLab self-hosted included) and check that it works                                                  | ✅ GitHub: your check |
+| 11                                     | Repository per project     | Pick a repository in the project form; "add account" right there                                                                   | ✅ Your check         |
+| 12                                     | Claude Code check          | Workbox checks that Claude Code is installed and signed in on this machine                                                         | ✅ Done               |
+| **M4 — Agent runs**                    |                            |                                                                                                                                    |                       |
+| 13                                     | Automatic clone            | A linked repository is cloned into `workspaces/<project>` (git-ignored) and kept up to date                                        | ✅ Your check         |
+| 14                                     | One working copy           | One normal copy per project, a branch per task (`workbox/<n>-…`)                                                                   | ✅ Your check         |
+| 15                                     | Always start fresh         | Every new task starts from the latest `main`/`dev`                                                                                 | ✅ Your check         |
+| 16                                     | Agent run                  | Claude Code in restricted mode, time limit, cancel; live timeline, summary, manual QA steps                                        | ✅ Your check         |
+| 17                                     | Provider-agnostic          | Claude Code is plugged in through a general agent interface; other agents can be added                                             | ✅ Done               |
+| 18                                     | Checks                     | Check commands detected from the repository, confirmed by you, run after the agent; one retry if they fail                         | ✅ Your check         |
+| 19                                     | Commit as you              | Your name and GitHub no-reply email, so commits count as your activity                                                             | ✅ Your check         |
+| 20                                     | Push and draft PR          | Pushes the task branch and opens a **draft** PR; you review and merge                                                              | ✅ Your check         |
+| 21                                     | Failures are safe          | Failing checks → not published; push/PR failure → "retry publishing"; crashed runs recovered on restart                            | ✅ Done               |
+| 22                                     | Continue development       | One click runs the next task (changes requested first, then priority, dependencies respected); **stops at Ready for QA**, says why | ✅ Your check         |
+| **M5 — Git workflow and verification** |                            |                                                                                                                                    |                       |
+| 23                                     | Tasks follow their PR      | PR merged → **Done**; closed → **Changes requested**; checked every 3 min and when the task is opened                              | ✅ Your check (PR #3) |
+| 24                                     | Local branch cleanup       | Merged task branches removed from the working copy, only when safe                                                                 | ✅ Done (PR #3)       |
+| 25                                     | Saved run files            | Agent transcript, full check output and patch per run; shown on the run; deleted after **7 days**                                  | ✅ Done (PR #4)       |
+| 26                                     | Links and check summaries  | Commit and branch links; one result line per check (e.g. "42 passed, 1 failed")                                                    | ✅ Done               |
+| 27                                     | End-to-end failure tests   | Browser tests proving failures never show up as success                                                                            | ⏳ Step 4, next       |
+| 28                                     | GitLab for real            | One real run with a merge request on a GitLab repository                                                                           | ⏳ Step 5             |
+| **Later**                              |                            |                                                                                                                                    |                       |
+| 29                                     | M6                         | Telegram notifications, QA approve / request changes, scheduling                                                                   | Not started           |
+| 30                                     | M7                         | A second agent, Trello sync                                                                                                        | Not started           |
+| 31                                     | Deferred                   | CLI, Docker isolation for agents, sign-in                                                                                          | Not started           |
+
+433 automated tests. Details per step follow below.
+
+## Completed — M5 step 3 (links and check summaries)
+
+- [x] Branch and commit links to GitHub/GitLab on the Git panel and each run. Links appear only
+      once the branch or commit is pushed (a commit counts if it is the pushed tip or was made
+      before the last push: task branches are never rewritten).
+- [x] One-line result per check, read from the tool's own report: Vitest, Jest, pytest, cargo,
+      Mocha, `node --test`, `go test`, ESLint, tsc. Shown on the run, on the timeline and in the
+      PR description ("`pnpm test`: 42 passed (12 s)"). Unknown output → no line, as before.
+- [x] Real data: the stored output of `1_64_modelcollector` test checks reads "2 passed".
+
+Verification: lint, typecheck, prettier, build, no schema drift; all tests pass (41 files, **433
+tests**).
+
+## Completed — M5 step 2 (run files, kept 7 days)
+
+- [x] Each run saves, under `<workbox>/artifacts/<runId>/` (git-ignored, owner-only files):
+  - `agent-transcript.jsonl`: the agent's raw output for every pass (provider-agnostic: the
+    contract's `transcriptPath`; each adapter writes its native format)
+  - `checks/<pass>-<step>-<name>.log`: complete check output (the run still stores the last
+    16 KB for the timeline)
+  - `branch.patch`: the branch's commits (`git format-patch`), never truncated
+- [x] **Saved files** on each run: view in the browser (always plain text, `nosniff`, no scripts)
+      or download; "Kept until <date>".
+- [x] Deleted after `WORKBOX_ARTIFACT_RETENTION_DAYS` (default **7**): files, rows and empty
+      folders, by the worker every hour. Migration `0009` adds `run_artifacts`.
+- [x] The worker refuses an artifacts folder inside the repository that isn't git-ignored.
+- [x] Saving files never fails a run: problems show as a warning on the timeline.
+
+Verification: lint, typecheck, prettier, build, no schema drift; all tests pass (39 files, **415
+tests**). New: a real run with a retry saves both check passes, the transcript (with stderr) and an
+applicable patch, then everything is purged after 7 days; path escapes are refused; the API serves
+files as plain text with safe headers and only under their own run; the dashboard lists them.
+Migration `0009` applied to the dev database.
 
 ## Completed — M5 step 1 (tasks follow their pull request)
 
@@ -400,6 +473,6 @@ Tests covering the acceptance criteria:
 
 ## Next action
 
-- **You:** start `pnpm dev`; merge (or close) a Workbox draft PR on GitHub; within 3 minutes, or as
-  soon as you open the task, it moves to Done (or Changes requested).
-- **Then:** M5 step 2, run artifacts (kept 7 days).
+- **You:** run a task; on the task page, the branch and commit are links, and each check shows
+  its result line (e.g. "2 passed"); the PR description shows it too.
+- **Then:** M5 step 4, end-to-end failure tests.
