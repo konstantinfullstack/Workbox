@@ -80,6 +80,36 @@ describe('runs API', () => {
     ).toBe(404);
   });
 
+  it('confirms checks and refuses to publish a task without commits', async () => {
+    await app.inject({ method: 'POST', url: '/api/v1/projects', payload: { name: 'Checks API' } });
+    const confirmed = await app.inject({
+      method: 'PUT',
+      url: '/api/v1/projects/checks-api/checks',
+      payload: { setup: null, commands: [{ name: 'test', command: 'npm test' }] },
+    });
+    expect(confirmed.statusCode).toBe(200);
+    expect(confirmed.json()).toMatchObject({
+      confirmed: true,
+      commands: [{ name: 'test', command: 'npm test' }],
+    });
+    expect(
+      (await app.inject({ method: 'GET', url: '/api/v1/projects/checks-api/checks' })).json(),
+    ).toMatchObject({ confirmed: true });
+    const task = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/projects/checks-api/tasks',
+        payload: { title: 'x' },
+      })
+    ).json<{ id: string }>();
+    expect(
+      (await app.inject({ method: 'GET', url: `/api/v1/tasks/${task.id}/git` })).json(),
+    ).toEqual({ branch: null, localCommitSha: null, reference: null });
+    const publish = await app.inject({ method: 'POST', url: `/api/v1/tasks/${task.id}/publish` });
+    expect(publish.statusCode).toBe(409);
+    expect(publish.json()).toMatchObject({ error: { code: 'NOTHING_TO_PUBLISH' } });
+  });
+
   it('documents the run routes', async () => {
     const spec = (await app.inject({ method: 'GET', url: '/docs/json' })).json<{
       paths: Record<string, unknown>;
@@ -91,6 +121,10 @@ describe('runs API', () => {
         '/api/v1/runs/{runId}/events',
         '/api/v1/runs/{runId}/diff',
         '/api/v1/runs/{runId}/cancel',
+        '/api/v1/projects/{project}/checks',
+        '/api/v1/projects/{project}/checks/detect',
+        '/api/v1/tasks/{taskId}/git',
+        '/api/v1/tasks/{taskId}/publish',
       ]),
     );
   });

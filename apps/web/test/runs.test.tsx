@@ -27,6 +27,17 @@ const makeRun = (overrides: Partial<TaskRun> = {}): TaskRun => ({
   summary: 'Added CONTRIBUTING.md with setup steps.',
   qaSteps: ['Open CONTRIBUTING.md', 'Follow the setup steps'],
   changedFiles: [{ path: 'CONTRIBUTING.md', status: 'added' }],
+  verification: 'passed',
+  checkResults: [
+    {
+      name: 'test',
+      command: 'pnpm test',
+      status: 'passed',
+      exitCode: 0,
+      durationMs: 4_000,
+      output: '3 passed',
+    },
+  ],
   exitReason: null,
   costUsd: 0.12,
   durationMs: 42_000,

@@ -16,6 +16,7 @@ import { registerErrorHandling } from './plugins/error-handler.js';
 import type { ReadinessCheck } from './readiness.js';
 import { healthRoutes } from './routes/health.js';
 import { connectionRoutes } from './routes/connections.js';
+import { gitRoutes } from './routes/git.js';
 import { projectRoutes } from './routes/projects.js';
 import { runRoutes } from './routes/runs.js';
 import { taskRoutes } from './routes/tasks.js';
@@ -98,6 +99,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
           { name: 'tasks', description: 'Tasks, state transitions and history' },
           { name: 'connections', description: 'Accounts on code hosts and agent runtimes' },
           { name: 'runs', description: 'Agent runs: start, follow, cancel, review changes' },
+          { name: 'checks', description: 'Per-project verification commands' },
+          { name: 'git', description: 'Task branches and draft pull/merge requests' },
         ],
       },
       transform: jsonSchemaTransform,
@@ -124,6 +127,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
         await api.register(taskRoutes, { services });
         await api.register(connectionRoutes, { services });
         await api.register(runRoutes, { services });
+        await api.register(gitRoutes, { services });
       },
       { prefix: API_PREFIX },
     );

@@ -5,6 +5,7 @@ import { PriorityBadge, StateBadge } from '../components/Badges.js';
 import { HistoryTimeline } from '../components/HistoryTimeline.js';
 import { ErrorBanner, LastUpdated, Loading } from '../components/Status.js';
 import { TaskForm } from '../components/TaskForm.js';
+import { GitPanel } from '../components/GitPanel.js';
 import { RunPanel } from '../components/runs/RunPanel.js';
 import { TransitionControls } from '../components/TransitionControls.js';
 
@@ -135,17 +136,8 @@ export function TaskPage() {
           </section>
 
           <RunPanel task={t} />
-          <section className="panel placeholder">
-            <h2>Git</h2>
-            <p className="muted">
-              Commit, push and pull request arrive in the next step (B2). Until then, review the
-              changes in the run above; the branch exists only in Workbox's local checkout.
-            </p>
-          </section>
-          <section className="panel placeholder">
-            <h2>Artifacts &amp; QA instructions</h2>
-            <p className="muted">Test results, artifacts and manual QA steps appear here in M5.</p>
-          </section>
+
+          <GitPanel task={t} />
         </div>
 
         <aside className="panel">

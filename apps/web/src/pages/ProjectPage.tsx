@@ -7,6 +7,7 @@ import {
   useTasks,
   useUpdateProject,
 } from '../api/hooks.js';
+import { ChecksCard } from '../components/ChecksCard.js';
 import { RepositoryCard } from '../components/connections/RepositoryCard.js';
 import { ProjectForm } from '../components/ProjectForm.js';
 import { ErrorBanner, LastUpdated, Loading } from '../components/Status.js';
@@ -109,6 +110,7 @@ export function ProjectPage() {
         </div>
       )}
       <RepositoryCard project={p} />
+      <ChecksCard project={p} />
 
       <div className="section-header">
         <h2>Tasks</h2>

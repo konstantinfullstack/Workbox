@@ -130,8 +130,14 @@ describe('readiness', () => {
     );
     expect(await services.runs.readiness(task.id)).toEqual([
       'The repository is still being cloned.',
+      expect.stringMatching(/Confirm the project's check commands/),
     ]);
     await syncer.sync(repo.id);
+    await services.checks.confirm(
+      project.slug,
+      { setup: null, commands: [], detectedFrom: [] },
+      ctx,
+    ); // "no checks"
     expect(await services.runs.readiness(task.id)).toEqual([]);
   });
 });

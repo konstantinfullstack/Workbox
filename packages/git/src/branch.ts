@@ -1,5 +1,5 @@
 import type { ChangedFile } from '#shared';
-import { GitError, runGit } from './run.js';
+import { GitError, runGit, type GitCredentials } from './run.js';
 import { hasUncommittedChanges } from './workspace.js';
 
 /** `workbox/12-add-health-endpoint`: always under workbox/, never the default branch. */
@@ -56,8 +56,11 @@ export async function checkoutTaskBranch(options: {
   );
   if (exists) {
     await runGit(['-C', path, 'checkout', '--quiet', branch]);
+    await fastForwardFromRemote(path, branch);
     return { created: false };
   }
+  // A branch published earlier (e.g. from another machine) continues from the remote copy.
+  const remote = await remoteBranchSha(path, branch);
   await runGit([
     '-C',
     path,
@@ -66,9 +69,83 @@ export async function checkoutTaskBranch(options: {
     '--no-track',
     '-b',
     branch,
-    `refs/remotes/origin/${options.defaultBranch}`,
+    remote ? `refs/remotes/origin/${branch}` : `refs/remotes/origin/${options.defaultBranch}`,
   ]);
   return { created: true };
+}
+
+/**
+ * If someone pushed to the task branch on the server (e.g. a fix on the PR), bring it in before
+ * the agent starts: fast-forward only. Diverged histories are never merged or overwritten
+ * automatically.
+ */
+async function fastForwardFromRemote(path: string, branch: string): Promise<void> {
+  const remote = await remoteBranchSha(path, branch);
+  if (!remote) return;
+  try {
+    await runGit(['-C', path, 'merge', '--ff-only', '--quiet', `refs/remotes/origin/${branch}`]);
+  } catch {
+    throw new GitError(
+      'rejected',
+      `${branch} has different commits locally and on the server; reconcile them in ${path} (or on the pull request) first`,
+    );
+  }
+}
+
+async function remoteBranchSha(path: string, branch: string): Promise<string | null> {
+  try {
+    const { stdout } = await runGit([
+      '-C',
+      path,
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      `refs/remotes/origin/${branch}^{commit}`,
+    ]);
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Commits on `branch` that are not on origin/<default> (what a PR would contain). */
+export async function commitsAhead(
+  path: string,
+  branch: string,
+  defaultBranch: string,
+): Promise<number> {
+  const { stdout } = await runGit([
+    '-C',
+    path,
+    'rev-list',
+    '--count',
+    `refs/remotes/origin/${defaultBranch}..refs/heads/${branch}`,
+  ]);
+  return Number(stdout.trim());
+}
+
+/**
+ * Pushes the task branch to origin with the account token (supplied per command, never stored).
+ * Never force-pushes, never pushes anything but workbox/ branches.
+ */
+export async function pushTaskBranch(options: {
+  path: string;
+  branch: string;
+  credentials: GitCredentials;
+  allowHttp?: boolean;
+}): Promise<string> {
+  if (!options.branch.startsWith('workbox/'))
+    throw new GitError('failed', 'Workbox only pushes workbox/ branches');
+  const ref = `refs/heads/${options.branch}`;
+  await runGit(['-C', options.path, 'push', '--quiet', '--no-verify', 'origin', `${ref}:${ref}`], {
+    credentials: options.credentials,
+    ...(options.allowHttp ? { allowHttp: true } : {}),
+  });
+  // Record the remote ref locally too, so later fast-forward checks see what was pushed.
+  const { stdout } = await runGit(['-C', options.path, 'rev-parse', ref]);
+  const sha = stdout.trim();
+  await runGit(['-C', options.path, 'update-ref', `refs/remotes/origin/${options.branch}`, sha]);
+  return sha;
 }
 
 export interface BranchChanges {

@@ -8,6 +8,7 @@ import {
   RUN_JOB_NAMES,
   WORKSPACE_JOB_NAMES,
   type ExecuteRunJobData,
+  type PublishTaskJobData,
   type ProbeAgentRuntimeJobData,
   type RemoveWorkspaceJobData,
   type SyncWorkspaceJobData,
@@ -88,6 +89,17 @@ export function createWorkerGateway(options: {
       // attempts 1: an agent run is never re-executed automatically.
       await runQueue.add(RUN_JOB_NAMES.execute, data, {
         jobId: `run-${runId}`,
+        attempts: 1,
+        removeOnComplete: 200,
+        removeOnFail: 200,
+      });
+    },
+    async enqueuePublish(taskId) {
+      runQueue ??= new Queue(QUEUE_NAMES.runs, { connection, ...prefix });
+      const data: PublishTaskJobData = { taskId };
+      // Same jobId while queued: double clicks collapse into one publish.
+      await runQueue.add(RUN_JOB_NAMES.publish, data, {
+        jobId: `publish-${taskId}-${Date.now() - (Date.now() % 5_000)}`,
         attempts: 1,
         removeOnComplete: 200,
         removeOnFail: 200,

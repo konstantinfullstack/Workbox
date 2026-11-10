@@ -2,12 +2,17 @@
 
 - **Status:**
   - Phase A: implemented, and verified with the user's repository (2026-11-05).
-  - Phases B–D: **approved 2026-11-05**. B1 implemented; B2 and B3 next.
+  - Phases B–D: **approved 2026-11-05**. B1 and B2 implemented; B3 next.
   - Commit name: "Konstantin Karnaukh", with the account's no-reply email.
   - **Revision 2026-11-10 (user, option A):** no per-task worktree folders. There is one normal
     working copy per project at `workspaces/<slug>/`, switched to the task branch; each successful
     run is committed locally on that branch (ADR-007). Places below that mention `worktrees/` or
     `repo.git` refer to the earlier layout.
+  - **B2 details (2026-11-10):**
+    - runs require confirmed checks (possibly none)
+    - failing checks after the retry keep the commit local, never publish
+    - a failed push or PR still completes the run, with a Retry publishing button
+    - commits pushed to the branch on GitHub are fast-forwarded in before the next run
 - **Spec reference:** §6 task execution, §7 agent abstraction, §11 security, §12 M4
 - **Depends on:** M2 (tasks), M3 (accounts, repositories, vault)
 

@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-**M4 B1 — agent runs: implemented, awaiting your first real run (checkpoint).** Phase A (automatic clones) is done; M3 was approved 2026-11-04.
+**M4 B2 — checks, push and draft pull requests: implemented on `feat/m4-b2-push-and-pr`, awaiting your first real publish.**
 Plans: [M3](plans/M3-vault-connections.md) · [M2](plans/M2-projects-tasks-admin.md).
 
 | Milestone                                         | Status                                                 |
@@ -13,6 +13,38 @@ Plans: [M3](plans/M3-vault-connections.md) · [M2](plans/M2-projects-tasks-admin
 | M4–M7                                             | Not started                                            |
 
 Nothing is committed yet. The user asked to hold commits for now.
+
+## Completed — M4 B2 (checks, push, draft PR)
+
+- [x] **Check detection** (U9): proposed from repository files read through the code host API
+      (`package.json` + lockfile for pnpm/yarn/bun/npm, `pyproject.toml`/`requirements.txt`,
+      `go.mod`, `Cargo.toml`, `Makefile`). You confirm or edit them on the project's **Checks**
+      card; runs require a confirmed configuration, which may be "no automatic checks". Verified
+      against GitHub for `1_64_modelcollector`: `pnpm install --frozen-lockfile`, then lint,
+      typecheck, test
+- [x] **Verification:** checks run in the working copy after the agent (same isolation as the
+      agent, `CI=true`, per-command limit); results and output are stored per run. A failure gets
+      **one bounded retry**: the agent receives the failure output and may run the check commands
+      itself. Spec §5 verification status: pending / running / passed / failed / skipped
+- [x] **Commit always, publish only when verified:**
+  - checks failing after the retry → the work stays committed locally, never pushed; the task is
+    blocked with the reason
+  - checks passing → **push** the `workbox/…` branch (token per command, never force) and **open
+    or update the draft PR/MR**
+  - idempotent: re-runs push to the same branch and update the same PR
+- [x] **Commits pushed to the task branch on the server** (e.g. a fix on the PR) are fast-forwarded
+      in before the next run; diverged histories are refused, never overwritten
+- [x] **Dependency folders** (`node_modules`, `.venv`, …) are excluded locally
+      (`.git/info/exclude`) so check setup never ends up in a commit
+- [x] **`git_references`** (spec §5): branch, pushed commit, PR number/URL/state, last error. PR
+      state is refreshed from the host when the task is viewed (at most once a minute). The
+      repository's "pull requests" access becomes verified or denied on the first attempt
+- [x] **Manual publish / retry** (`POST /tasks/:id/publish`, Git panel button) for commits that
+      aren't published yet, e.g. task #2's `4f39ac9`
+- [x] PR description: summary, acceptance criteria as a checklist, check results (or a clear "no
+      automatic checks"), manual QA steps, run reference
+- [x] CI actions bumped to Node 24 releases (`checkout@v7.0.1`, `setup-node@v7.1.0`,
+      `pnpm/action-setup@v6.1.0`)
 
 ## Completed — M4 B1 (agent runs)
 
@@ -161,7 +193,7 @@ Nothing is committed yet. The user asked to hold commits for now.
 ## Blocked
 
 - **CI on GitHub:** waiting for the user to connect a GitHub remote.
-- **Commits:** held at the user's request. The git identity isn't configured yet either.
+- None. (CI is green on GitHub; the repo is `konstantinfullstack/Workbox`.)
 
 ## Decisions
 
@@ -310,9 +342,10 @@ Tests covering the acceptance criteria:
 
 ## Next action
 
-- **B2:**
-  - detect check commands (you confirm them)
-  - push `workbox/…` branches with the account token (Workbox only, never the agent)
-  - open or update a **draft PR/MR**, idempotently (`git_references`)
-  - show the PR link on the task
-- **First target:** task #2's commit `4f39ac9`, which is already on `workbox/2-add-a-contributing-md`.
+- **You:**
+  1. start `pnpm dev`
+  2. open `1-64-model-collector` → **Checks** → _Detect from repository_ → confirm
+  3. on task #2, click **Publish and open draft pull request**
+  4. review the PR on GitHub
+- **Then:** merge this branch after your OK, and **B3**: "Continue development" (next eligible
+  task, stop at Ready for QA).

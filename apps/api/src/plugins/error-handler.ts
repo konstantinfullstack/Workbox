@@ -109,4 +109,5 @@ const DOMAIN_ERROR_STATUS: Partial<Record<ErrorCode, number>> = {
   [ERROR_CODES.runActive]: 409,
   [ERROR_CODES.taskNotRunnable]: 409,
   [ERROR_CODES.runNotActive]: 409,
+  [ERROR_CODES.nothingToPublish]: 409,
 };

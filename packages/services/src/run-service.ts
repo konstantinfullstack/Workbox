@@ -2,6 +2,7 @@ import { DomainError } from '#core';
 import {
   connections,
   projectRepositories,
+  projects,
   runEvents,
   taskRuns,
   tasks,
@@ -20,6 +21,7 @@ import { ACTIVE_RUN_STATES } from '#shared';
 import { and, asc, desc, eq, gt, inArray, max } from 'drizzle-orm';
 import type { WorkerGateway } from './agent-runtime-service.js';
 import { recordAudit } from './audit.js';
+import { projectChecks } from './project-checks-service.js';
 import type { ActionContext } from './context.js';
 import { PG_UNIQUE_VIOLATION, pgErrorInfo } from './pg-errors.js';
 import { toRunEvent, toTaskRun } from './run-mappers.js';
@@ -74,6 +76,16 @@ export class RunService {
             : 'The repository is still being cloned.',
         );
       }
+    }
+    const [project] = await this.db
+      .select({ config: projects.config })
+      .from(projects)
+      .where(eq(projects.id, task.projectId))
+      .limit(1);
+    if (repo && !projectChecks(project?.config ?? {}).confirmed) {
+      reasons.push(
+        'Confirm the project\'s check commands first (project page → Checks), or choose "no checks".',
+      );
     }
     const [runtime] = await this.db
       .select()

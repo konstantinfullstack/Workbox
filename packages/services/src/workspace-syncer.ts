@@ -1,16 +1,10 @@
 import { DomainError } from '#core';
 import { connections, projectRepositories, projects, workspaces, type Database } from '#database';
 import { GitError, removeWorkspace, syncRepository, workspacePath } from '#git';
-import type { CodeHostProvider } from '#shared';
+import { gitUsername } from '#integrations';
 import { eq, sql } from 'drizzle-orm';
 import { recordAudit } from './audit.js';
 import type { ConnectionService } from './connection-service.js';
-
-/** Username that code hosts accept together with a token over https. */
-const GIT_USERNAME: Record<CodeHostProvider, string> = {
-  github: 'x-access-token',
-  gitlab: 'oauth2',
-};
 
 export interface WorkspaceSyncerOptions {
   db: Database;
@@ -65,7 +59,7 @@ export class WorkspaceSyncer {
             cloneUrl: row.repo.cloneUrlHttps,
             defaultBranch: row.repo.defaultBranch,
             identity: { provider, host: row.repo.host, externalId: row.repo.externalId },
-            credentials: { username: GIT_USERNAME[provider], token },
+            credentials: { username: gitUsername(provider), token },
             ...(this.options.timeoutMs ? { timeoutMs: this.options.timeoutMs } : {}),
           }),
       );

@@ -18,3 +18,8 @@ export function noReplyEmail(
     return accountId ? `${accountId}+${account}@${domain}` : `${account}@${domain}`;
   return accountId ? `${accountId}-${account}@${domain}` : `${account}@${domain}`;
 }
+
+/** Username code hosts accept together with a token for git over https. */
+export function gitUsername(provider: CodeHostProvider): string {
+  return provider === 'github' ? 'x-access-token' : 'oauth2';
+}

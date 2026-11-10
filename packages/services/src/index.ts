@@ -3,15 +3,21 @@ import { createCodeHostRegistry, type CodeHostRegistry } from '#integrations';
 import type { Keyring } from '#vault';
 import { AgentRuntimeService, type WorkerGateway } from './agent-runtime-service.js';
 import { ConnectionService } from './connection-service.js';
+import { ProjectChecksService } from './project-checks-service.js';
 import { ProjectService } from './project-service.js';
 import { RepositoryService } from './repository-service.js';
 import { RunService } from './run-service.js';
+import { TaskGitService } from './task-git-service.js';
 import { TaskService } from './task-service.js';
 
 export { AgentRuntimeService, type WorkerGateway } from './agent-runtime-service.js';
 export { ConnectionService, credentialContext } from './connection-service.js';
 export type { ActionContext } from './context.js';
+export { projectChecks, ProjectChecksService } from './project-checks-service.js';
 export { ProjectService } from './project-service.js';
+export { Publisher, pullRequestBody, type PublishResult } from './publisher.js';
+export { runChecks } from './checks-runner.js';
+export { TaskGitService, type TaskGitInfo } from './task-git-service.js';
 export { RepositoryService } from './repository-service.js';
 export { RunExecutor, type RunExecutorOptions } from './run-executor.js';
 export { RUNNABLE_TASK_STATES, RunService } from './run-service.js';
@@ -31,6 +37,8 @@ export interface Services {
   repositories: RepositoryService;
   agentRuntimes: AgentRuntimeService;
   runs: RunService;
+  checks: ProjectChecksService;
+  git: TaskGitService;
 }
 
 export interface ServiceDeps {
@@ -56,5 +64,7 @@ export function createServices(deps: ServiceDeps): Services {
     repositories: new RepositoryService(deps.db, codeHosts, connections, deps.workerGateway),
     agentRuntimes: new AgentRuntimeService(deps.db, deps.workerGateway),
     runs: new RunService(deps.db, deps.workerGateway),
+    checks: new ProjectChecksService(deps.db, codeHosts, connections),
+    git: new TaskGitService(deps.db, codeHosts, connections, deps.workerGateway),
   };
 }

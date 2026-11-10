@@ -19,7 +19,7 @@ export interface RunGitOptions {
   input?: string;
 }
 
-export type GitErrorKind = 'auth' | 'not_found' | 'network' | 'timeout' | 'failed';
+export type GitErrorKind = 'auth' | 'not_found' | 'network' | 'timeout' | 'rejected' | 'failed';
 
 /** A git failure with a message that is safe to show: tokens are scrubbed from git's output. */
 export class GitError extends Error {
@@ -122,6 +122,12 @@ function classify(output: string, killed: boolean): GitError {
     return new GitError(
       'auth',
       'authentication failed: the token was rejected or lacks repository access',
+    );
+  }
+  if (/\[rejected\]|non-fast-forward|fetch first|\[remote rejected\]/i.test(output)) {
+    return new GitError(
+      'rejected',
+      'the remote branch has commits that are not here (it was changed on the server)',
     );
   }
   if (

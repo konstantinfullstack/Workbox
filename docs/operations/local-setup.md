@@ -163,6 +163,22 @@ folder). After a change, the worker re-syncs every clone into the new location a
 - **The folder never gets committed.** `workspaces/` is in `.gitignore`. Any other folder you
   choose inside the Workbox repo must be git-ignored too, or the worker refuses to start.
 
+### Checks and publishing
+
+- **Checks:** on the project page, **Checks → Detect from repository** proposes commands from your
+  repo (e.g. `pnpm install --frozen-lockfile`, then lint, typecheck, test). Edit or confirm them.
+  Runs need this decision once; "no automatic checks" is a valid choice.
+- **After each run:**
+  1. the checks run in the working copy; a failure gives the agent one retry with the error
+     output
+  2. Workbox commits as you
+  3. if the checks pass, it pushes the `workbox/…` branch and opens or updates a **draft** pull
+     request (GitHub) or merge request (GitLab)
+  4. you review, mark it ready and merge it yourself; Workbox never merges
+- **Retry:** if pushing or opening the PR fails (e.g. the token lacks _Pull requests: write_), the
+  task's **Git** panel shows why, with a **Retry publishing** button.
+- **Fixes on the PR branch:** if you push a fix there yourself, the next run starts from it.
+
 ### Rotating the master key
 
 1. Move the current key to `WORKBOX_PREVIOUS_MASTER_KEYS=1:<old base64>`.

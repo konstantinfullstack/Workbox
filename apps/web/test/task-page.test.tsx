@@ -23,6 +23,9 @@ function setup(initial: Task, extra: Parameters<typeof mockApi>[0] = {}) {
     [`GET /api/v1/projects/${initial.projectId}/tasks`]: () => ({
       json: { items: [current], total: 1, limit: 500, offset: 0 },
     }),
+    [`GET /api/v1/tasks/${initial.id}/git`]: () => ({
+      json: { branch: null, localCommitSha: null, reference: null },
+    }),
     ...extra,
   });
   renderRoute(<TaskPage />, '/tasks/:taskId', `/tasks/${initial.id}`);
@@ -139,6 +142,6 @@ describe('task detail page', () => {
     expect(await screen.findByText(/Created in/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Runs' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Runs' })).toBeInTheDocument();
-    expect(screen.getByText(/arrive in the next step \(B2\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/No branch yet: the first run creates one/)).toBeInTheDocument();
   });
 });

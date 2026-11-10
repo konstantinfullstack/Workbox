@@ -1,4 +1,11 @@
 import {
+  checksDetectionSchema,
+  gitReferenceSchema,
+  projectChecksSchema,
+  type ChecksDetection,
+  type ConfirmChecksInput,
+  type GitReference,
+  type ProjectChecks,
   runDiffSchema,
   runEventSchema,
   taskRunSchema,
@@ -89,6 +96,16 @@ const connectionList = z.object({ items: z.array(connectionSchema) });
 const repositoryList = z.object({ items: z.array(remoteRepositorySchema) });
 const linkedRepository = z.object({ repository: projectRepositorySchema.nullable() });
 const runList = z.object({ items: z.array(taskRunSchema) });
+const taskGitSchema = z.object({
+  branch: z.string().nullable(),
+  localCommitSha: z.string().nullable(),
+  reference: gitReferenceSchema.nullable(),
+});
+export type TaskGit = {
+  branch: string | null;
+  localCommitSha: string | null;
+  reference: GitReference | null;
+};
 const eventList = z.object({ items: z.array(runEventSchema) });
 const readinessSchema = z.object({ ready: z.boolean(), reasons: z.array(z.string()) });
 const historyList = z.object({ items: z.array(taskTransitionSchema) });
@@ -202,6 +219,21 @@ export const api = {
     request('GET', `/runs/${runId}/diff`, runDiffSchema),
   cancelRun: (runId: string): Promise<TaskRun> =>
     request('POST', `/runs/${runId}/cancel`, taskRunSchema),
+
+  projectChecks: (project: string): Promise<ProjectChecks> =>
+    request('GET', `/projects/${encodeURIComponent(project)}/checks`, projectChecksSchema),
+  detectChecks: (project: string): Promise<ChecksDetection> =>
+    request(
+      'POST',
+      `/projects/${encodeURIComponent(project)}/checks/detect`,
+      checksDetectionSchema,
+    ),
+  confirmChecks: (project: string, input: ConfirmChecksInput): Promise<ProjectChecks> =>
+    request('PUT', `/projects/${encodeURIComponent(project)}/checks`, projectChecksSchema, input),
+  taskGit: (taskId: string): Promise<TaskGit> =>
+    request('GET', `/tasks/${taskId}/git`, taskGitSchema),
+  publishTask: (taskId: string): Promise<{ queued: true }> =>
+    request('POST', `/tasks/${taskId}/publish`, z.object({ queued: z.literal(true) })),
 };
 
 export type Api = typeof api;

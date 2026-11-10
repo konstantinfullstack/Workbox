@@ -69,6 +69,7 @@ export async function syncRepository(options: {
     if (identity && sameIdentity(identity, options.identity)) {
       await runGit(['-C', options.path, 'remote', 'set-url', 'origin', options.cloneUrl], git);
       await runGit(['-C', options.path, 'fetch', '--prune', '--tags', 'origin'], git);
+      await writeLocalExcludes(options.path);
       return {
         action: 'fetched',
         headSha: await originHead(options.path, options.defaultBranch),
@@ -99,6 +100,7 @@ export async function syncRepository(options: {
       join(staging, '.git', IDENTITY_FILE),
       `${JSON.stringify(options.identity, null, 2)}\n`,
     );
+    await writeLocalExcludes(staging);
     // Check out the default branch (if the repository isn't empty).
     if (await originHead(staging, options.defaultBranch)) {
       await runGit([
@@ -199,4 +201,31 @@ export async function assertWorkspacesRoot(root: string, projectRoot: string): P
         'cloned code could be committed. Use the default (workspaces/, already git-ignored) or add it to .gitignore.',
     );
   }
+}
+
+/**
+ * Local-only ignore rules (`.git/info/exclude`, never committed): dependency and cache folders
+ * created by check commands must never end up in a task commit, even if the repository's own
+ * .gitignore misses them.
+ */
+export const LOCAL_EXCLUDES = [
+  'node_modules/',
+  '.venv/',
+  'venv/',
+  '__pycache__/',
+  '.pytest_cache/',
+  '.turbo/',
+  '.next/cache/',
+];
+
+async function writeLocalExcludes(path: string): Promise<void> {
+  const file = join(path, '.git', 'info', 'exclude');
+  await mkdir(dirname(file), { recursive: true });
+  const header = '# Added by Workbox: build/dependency folders are never committed by agent runs';
+  const existing = existsSync(file) ? await readFile(file, 'utf8') : '';
+  if (existing.includes(header)) return;
+  await writeFile(
+    file,
+    `${existing.replace(/\n?$/, '\n')}${header}\n${LOCAL_EXCLUDES.join('\n')}\n`,
+  );
 }
