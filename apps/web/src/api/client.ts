@@ -1,5 +1,9 @@
 import {
   checksDetectionSchema,
+  continueStatusSchema,
+  continueTaskRefSchema,
+  type ContinueStatus,
+  type ContinueTaskRef,
   gitReferenceSchema,
   projectChecksSchema,
   type ChecksDetection,
@@ -230,6 +234,14 @@ export const api = {
     ),
   confirmChecks: (project: string, input: ConfirmChecksInput): Promise<ProjectChecks> =>
     request('PUT', `/projects/${encodeURIComponent(project)}/checks`, projectChecksSchema, input),
+  continueStatus: (project: string): Promise<ContinueStatus> =>
+    request('GET', `/projects/${encodeURIComponent(project)}/continue`, continueStatusSchema),
+  continueDevelopment: (project: string): Promise<{ task: ContinueTaskRef; run: TaskRun }> =>
+    request(
+      'POST',
+      `/projects/${encodeURIComponent(project)}/continue`,
+      z.object({ task: continueTaskRefSchema, run: taskRunSchema }),
+    ),
   taskGit: (taskId: string): Promise<TaskGit> =>
     request('GET', `/tasks/${taskId}/git`, taskGitSchema),
   publishTask: (taskId: string): Promise<{ queued: true }> =>

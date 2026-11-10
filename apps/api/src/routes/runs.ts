@@ -1,5 +1,7 @@
 import type { Services } from '#services';
 import {
+  continueStatusSchema,
+  continueTaskRefSchema,
   errorResponseSchema,
   runDiffSchema,
   runEventSchema,
@@ -13,6 +15,7 @@ import { actionContext } from '../context.js';
 
 const taskParams = z.object({ taskId: z.uuid() });
 const runParams = z.object({ runId: z.uuid() });
+const projectParams = z.object({ project: z.string().min(1).max(100) });
 const errors = {
   400: errorResponseSchema,
   404: errorResponseSchema,
@@ -25,6 +28,38 @@ export const runRoutes: FastifyPluginAsyncZod<{ services: Services }> = async (
   app,
   { services },
 ) => {
+  app.get(
+    '/projects/:project/continue',
+    {
+      schema: {
+        tags: ['runs'],
+        summary: 'What "Continue development" would do next, or why it stopped',
+        params: projectParams,
+        response: { 200: continueStatusSchema, ...errors },
+      },
+    },
+    async (request) => services.continuation.status(request.params.project),
+  );
+
+  app.post(
+    '/projects/:project/continue',
+    {
+      schema: {
+        tags: ['runs'],
+        summary: "Start a run for the project's next task (stops at Ready for QA)",
+        params: projectParams,
+        response: {
+          202: z.object({ task: continueTaskRefSchema, run: taskRunSchema }),
+          ...errors,
+        },
+      },
+    },
+    async (request, reply) =>
+      reply
+        .code(202)
+        .send(await services.continuation.start(request.params.project, actionContext(request))),
+  );
+
   app.get(
     '/tasks/:taskId/run-readiness',
     {
