@@ -1,0 +1,5 @@
+# Single-package repository: this file only holds pnpm settings (no workspace packages).
+# Install scripts are denied by default; allow only what is required.
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: false

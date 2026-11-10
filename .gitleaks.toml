@@ -1,0 +1,11 @@
+# Gitleaks config: default rules, plus an allowlist for test fixtures.
+# Tests use realistic-looking but fake tokens (e.g. "glpat-…") to exercise redaction and leak checks.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake tokens in automated tests"
+paths = [
+  '''(^|/)(apps|packages)/[^/]+/test/.*\.(int\.)?test\.tsx?$''',
+  '''(^|/)test/fake-code-hosts\.ts$''',
+]

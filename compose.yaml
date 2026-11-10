@@ -1,0 +1,52 @@
+# Local development infrastructure for Workbox.
+# Usage: cp .env.example .env && docker compose up -d --wait
+#
+# Reads the same DB_* / REDIS_* variables as the application, so there is one source of truth.
+# Ports bind to 127.0.0.1 only; services are not reachable from other hosts.
+#
+# The bundled PostgreSQL is behind the `postgres` profile. It runs when .env contains
+# COMPOSE_PROFILES=postgres (the .env.example default). Leave COMPOSE_PROFILES empty to use a
+# PostgreSQL you already run; then only Redis starts here.
+name: workbox
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    profiles: ['postgres']
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-workbox}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env (see .env.example)}
+      POSTGRES_DB: ${DB_NAME:-workbox}
+      WORKBOX_TEST_DB: ${DB_TEST_NAME:-workbox_test}
+    ports:
+      - '127.0.0.1:${DB_PORT:-55432}:5432'
+    volumes:
+      # PostgreSQL 18+ images keep data in a versioned subdirectory; mount the parent.
+      - postgres-data:/var/lib/postgresql
+      - ./infra/docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # AOF persistence so queued jobs survive container restarts.
+    # noeviction is required by BullMQ: evicting queue keys would silently lose jobs.
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - '127.0.0.1:${REDIS_PORT:-56379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres-data:
+  redis-data:

@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: workbox
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_DB: workbox
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U workbox -d workbox"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+
+    env:
+      NODE_ENV: test
+      LOG_LEVEL: warn
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USER: workbox
+      DB_PASSWORD: ci-only-not-a-secret
+      DB_NAME: workbox
+      DB_TEST_NAME: workbox_test
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version read from package.json "packageManager"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format
+        run: pnpm format:check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Create integration-test database
+        run: PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -c "CREATE DATABASE $DB_TEST_NAME"
+
+      - name: Migrations apply from empty database
+        run: pnpm db:migrate
+
+      - name: Migrations are up to date with the schema
+        run: |
+          pnpm db:generate
+          git diff --exit-code -- packages/database/migrations \
+            || (echo "::error::Schema changed without a committed migration. Run 'pnpm db:generate'." && exit 1)
+          test -z "$(git status --porcelain -- packages/database/migrations)" \
+            || (echo "::error::Untracked migration generated. Run 'pnpm db:generate' and commit it." && exit 1)
+
+      - name: Integration tests
+        run: pnpm test:integration
+
+      - name: Build
+        run: pnpm build
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.28.0 \
+            git /repo --no-banner --redact --verbose --config /repo/.gitleaks.toml

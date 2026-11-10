@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Workbox workspaces (cloned repositories and agent worktrees). The default location is
+# ~/.workbox/workspaces, outside this repo; these entries guard against in-repo locations.
+.workbox/
+workspaces/

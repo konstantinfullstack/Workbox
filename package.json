@@ -1,0 +1,111 @@
+{
+  "name": "workbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-agnostic autonomous software development orchestration platform",
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "imports": {
+    "#agents": {
+      "@workbox/source": "./packages/agents/src/index.ts",
+      "default": "./dist/packages/agents/src/index.js"
+    },
+    "#core": {
+      "@workbox/source": "./packages/core/src/index.ts",
+      "default": "./dist/packages/core/src/index.js"
+    },
+    "#database": {
+      "@workbox/source": "./packages/database/src/index.ts",
+      "default": "./dist/packages/database/src/index.js"
+    },
+    "#git": {
+      "@workbox/source": "./packages/git/src/index.ts",
+      "default": "./dist/packages/git/src/index.js"
+    },
+    "#integrations": {
+      "@workbox/source": "./packages/integrations/src/index.ts",
+      "default": "./dist/packages/integrations/src/index.js"
+    },
+    "#services": {
+      "@workbox/source": "./packages/services/src/index.ts",
+      "default": "./dist/packages/services/src/index.js"
+    },
+    "#shared": {
+      "@workbox/source": "./packages/shared/src/index.ts",
+      "default": "./dist/packages/shared/src/index.js"
+    },
+    "#vault": {
+      "@workbox/source": "./packages/vault/src/index.ts",
+      "default": "./dist/packages/vault/src/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "pnpm run --parallel \"/^dev:/\"",
+    "dev:api": "tsx watch --conditions=@workbox/source --env-file-if-exists=.env apps/api/src/server.ts",
+    "dev:worker": "tsx watch --conditions=@workbox/source --env-file-if-exists=.env apps/worker/src/main.ts",
+    "dev:web": "vite --config apps/web/vite.config.ts",
+    "start:api": "node --env-file-if-exists=.env dist/apps/api/src/server.js",
+    "start:worker": "node --env-file-if-exists=.env dist/apps/worker/src/main.js",
+    "build": "tsc -p tsconfig.build.json && vite build --config apps/web/vite.config.ts",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/web/tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --project unit --project web",
+    "test:integration": "vitest run --project integration",
+    "test:all": "vitest run",
+    "db:generate": "NODE_OPTIONS=--conditions=@workbox/source drizzle-kit generate",
+    "db:migrate": "tsx --conditions=@workbox/source --env-file-if-exists=.env packages/database/src/cli/migrate.ts",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build",
+    "vault:generate-key": "tsx --conditions=@workbox/source packages/vault/src/cli/generate-key.ts",
+    "vault:rotate": "tsx --conditions=@workbox/source --env-file-if-exists=.env packages/services/src/cli/rotate-keys.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.4.0",
+    "@fastify/static": "^10.1.8",
+    "@fastify/swagger": "^9.9.3",
+    "@fastify/swagger-ui": "^6.1.2",
+    "@tanstack/react-query": "^5.105.3",
+    "bullmq": "^6.5.4",
+    "drizzle-orm": "^0.45.4",
+    "fastify": "^5.12.8",
+    "fastify-type-provider-zod": "^7.0.0",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.1",
+    "pino": "^10.4.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "@vitest/coverage-v8": "^5.1.0",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^10.14.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "jsdom": "^30.1.3",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "8.3.5",
+    "vitest": "^5.1.0"
+  }
+}

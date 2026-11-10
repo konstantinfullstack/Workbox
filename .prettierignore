@@ -1,0 +1,6 @@
+pnpm-lock.yaml
+dist/
+coverage/
+packages/database/migrations/
+WORKBOX_PROJECT_SPEC.md
+AGENTS.md

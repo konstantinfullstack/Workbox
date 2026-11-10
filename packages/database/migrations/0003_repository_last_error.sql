@@ -1,0 +1,1 @@
+ALTER TABLE "project_repositories" ADD COLUMN "last_error" text;
